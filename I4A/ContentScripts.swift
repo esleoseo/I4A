@@ -10,18 +10,19 @@ enum ContentScripts {
     /// Hides links to Reels everywhere, and Reels posts in the home feed.
     /// Rules match stable hooks (href, tag names), never Instagram's generated
     /// class names. `:has()` keeps applying as Instagram re-renders, so no DOM
-    /// polling is needed.
+    /// polling is needed. `/explore/` is excluded so hashtag links such as
+    /// `/explore/tags/reel/` don't take ordinary posts down with them.
     static let hideReelsCSS = """
     a[href="/reels/"],
     a[href="/reels"],
     a[href^="/reels/"],
     a[href^="/reels?"],
     a[href*="instagram.com/reels"],
-    a[href$="/reels/"],
-    a[href*="/reel/"],
+    a[href$="/reels/"]:not([href*="/explore/"]),
+    a[href*="/reel/"]:not([href*="/explore/"]),
     div:has(> a[href="/reels/"]:only-child),
     li:has(> a[href="/reels/"]:only-child),
-    html[data-i4a-feed] article:has(a[href*="/reel/"]) {
+    html[data-i4a-feed] article:has(a[href*="/reel/"]:not([href*="/explore/"])) {
         display: none !important;
     }
     """
@@ -79,6 +80,8 @@ enum ContentScripts {
           };
 
           ensure();
+          // WebKit runs document-start scripts once <html> exists; the check is
+          // only a null guard.
           if (document.documentElement) {
             new MutationObserver(function () {
               if (!document.getElementById(STYLE_ID)) { ensure(); }

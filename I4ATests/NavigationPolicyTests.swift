@@ -69,6 +69,8 @@ final class NavigationPolicyTests: XCTestCase {
         XCTAssertEqual(decide("itms-apps://apps.apple.com/app/id389801252"), .cancel)
         XCTAssertEqual(decide("instagram://media", main: false), .cancel)
         XCTAssertEqual(decide("mailto:hi@example.com"), .openExternally)
+        XCTAssertEqual(decide("tel:123", main: false), .cancel)
+        XCTAssertEqual(decide("https://ig.me/m/someone"), .allow)
         XCTAssertEqual(decide("about:blank"), .allow)
     }
 }

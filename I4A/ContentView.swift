@@ -47,6 +47,7 @@ struct ContentView: View {
     private func syncState() {
         let active = scenePhase == .active
         web.setSuspended(isBlocked)
+        if showSettings { web.pauseMedia() }
         tracker.update(active: active, counting: !isBlocked && !showSettings)
     }
 }

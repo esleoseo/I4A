@@ -17,6 +17,7 @@ final class WebController: NSObject, ObservableObject {
     private var needsReload = false
     private var bounceScheduled = false
     private var failedURL: URL?
+    private var lastTermination: Date?
 
     init(hideReels: Bool) {
         self.hideReels = hideReels
@@ -103,8 +104,14 @@ final class WebController: NSObject, ObservableObject {
         }
     }
 
+    /// Stops audio and video, e.g. while the settings sheet covers the page.
+    func pauseMedia() {
+        webView.pauseAllMediaPlayback(completionHandler: nil)
+    }
+
     func retry() {
         loadError = nil
+        lastTermination = nil
         if let failedURL {
             webView.load(URLRequest(url: failedURL))
         } else {
@@ -244,8 +251,16 @@ extension WebController: WKNavigationDelegate {
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        // The page process crashed or was killed for memory; bring it back.
+        // The page process crashed or was killed for memory; bring it back,
+        // unless it keeps dying, in which case let the user retry by hand.
         endRefreshing()
+        let now = Date()
+        defer { lastTermination = now }
+        if let last = lastTermination, now.timeIntervalSince(last) < 15 {
+            failedURL = webView.url
+            loadError = "페이지가 예기치 않게 종료됐어요."
+            return
+        }
         if isSuspended {
             needsReload = true
         } else {
@@ -284,12 +299,13 @@ extension WebController: WKUIDelegate {
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping () -> Void
     ) {
-        guard let presenter = presenter() else {
-            completionHandler()
+        let reply = DialogReply(fallback: ()) { _ in completionHandler() }
+        guard !isSuspended, let presenter = presenter() else {
+            reply.send(())
             return
         }
         let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "확인", style: .default) { _ in completionHandler() })
+        alert.addAction(UIAlertAction(title: "확인", style: .default) { _ in reply.send(()) })
         presenter.present(alert, animated: true)
     }
 
@@ -299,14 +315,39 @@ extension WebController: WKUIDelegate {
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping (Bool) -> Void
     ) {
-        guard let presenter = presenter() else {
-            completionHandler(false)
+        let reply = DialogReply(fallback: false, completionHandler)
+        guard !isSuspended, let presenter = presenter() else {
+            reply.send(false)
             return
         }
         let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "취소", style: .cancel) { _ in completionHandler(false) })
-        alert.addAction(UIAlertAction(title: "확인", style: .default) { _ in completionHandler(true) })
+        alert.addAction(UIAlertAction(title: "취소", style: .cancel) { _ in reply.send(false) })
+        alert.addAction(UIAlertAction(title: "확인", style: .default) { _ in reply.send(true) })
         presenter.present(alert, animated: true)
+    }
+}
+
+/// Calls a WebKit dialog completion handler exactly once. If the alert never
+/// shows (UIKit refuses a presentation mid-transition) and is released, the
+/// fallback answer is sent; WebKit raises an exception for a handler that is
+/// dropped without being called.
+private final class DialogReply<Value> {
+    private var handler: ((Value) -> Void)?
+    private let fallback: Value
+
+    init(fallback: Value, _ handler: @escaping (Value) -> Void) {
+        self.fallback = fallback
+        self.handler = handler
+    }
+
+    func send(_ value: Value) {
+        let handler = self.handler
+        self.handler = nil
+        handler?(value)
+    }
+
+    deinit {
+        send(fallback)
     }
 }
 

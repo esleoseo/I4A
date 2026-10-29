@@ -18,8 +18,14 @@ jobs:
       - name: Unit tests (iOS Simulator)
         run: |
           set -o pipefail
-          UDID=$(xcrun simctl list devices available -j \
-            | jq -r '[.devices | to_entries[] | select(.key | contains("iOS")) | .value[] | select(.name | startswith("iPhone"))] | last | .udid')
+          # Pick an iPhone simulator the active Xcode can actually run.
+          UDID=$(xcodebuild -project I4A.xcodeproj -scheme I4A -showdestinations 2>/dev/null \
+            | awk '/Ineligible destinations/{exit} /platform:iOS Simulator/ && /name:iPhone/ && !/error:/ { if (match($0, /id:[^,]+/)) { print substr($0, RSTART+3, RLENGTH-3); exit } }' || true)
+          if [ -z "$UDID" ]; then
+            echo "::error::No eligible iPhone simulator for the active Xcode"
+            xcodebuild -project I4A.xcodeproj -scheme I4A -showdestinations || true
+            exit 1
+          fi
           echo "Simulator: $UDID"
           xcodebuild test \
             -project I4A.xcodeproj \

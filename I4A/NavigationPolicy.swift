@@ -17,6 +17,8 @@ enum NavigationPolicy {
     /// "Log in with Facebook" and account center flows.
     static let allowedHostSuffixes = [
         "instagram.com",
+        "instagr.am",
+        "ig.me",
         "cdninstagram.com",
         "facebook.com",
         "facebook.net",
@@ -56,7 +58,7 @@ enum NavigationPolicy {
         case "about", "blob", "data":
             return .allow
         case "mailto", "tel", "sms":
-            return .openExternally
+            return isMainFrame ? .openExternally : .cancel
         default:
             // instagram://, itms-apps://, intent:// ... Opening the real app
             // would defeat the purpose of this one.
