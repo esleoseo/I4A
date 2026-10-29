@@ -51,6 +51,13 @@ enum WebTab: String, CaseIterable, Identifiable {
         return nil
     }
 
+    /// Pages where Instagram's web drops its own bar but the native one
+    /// should stay so people can get around: the DM inbox and requests, not a
+    /// conversation (its message box sits at the bottom).
+    static func keepsBarWithoutInstagramNav(onPath path: String) -> Bool {
+        path.hasPrefix("/direct/") && !path.hasPrefix("/direct/t/")
+    }
+
     /// Pages that use the bottom of the screen themselves (message composer,
     /// story viewer, post editor, login and settings forms).
     static func hidesBar(onPath path: String) -> Bool {

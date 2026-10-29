@@ -29,4 +29,11 @@ final class WebTabTests: XCTestCase {
         XCTAssertNil(WebTab.profile.fallbackPath(profilePath: nil))
         XCTAssertNil(WebTab.create.fallbackPath(profilePath: "/me/"))
     }
+
+    func testBarStaysWhereInstagramDropsItsOwn() {
+        XCTAssertTrue(WebTab.keepsBarWithoutInstagramNav(onPath: "/direct/inbox/"))
+        XCTAssertTrue(WebTab.keepsBarWithoutInstagramNav(onPath: "/direct/requests/"))
+        XCTAssertFalse(WebTab.keepsBarWithoutInstagramNav(onPath: "/direct/t/123/"))
+        XCTAssertFalse(WebTab.keepsBarWithoutInstagramNav(onPath: "/p/abc/"))
+    }
 }

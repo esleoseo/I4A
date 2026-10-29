@@ -16,6 +16,8 @@ enum ContentScripts {
     /// - `data-i4a-reels` on <html>: Reels hiding is on.
     /// - `data-i4a-feed` on <html>: the home feed is showing.
     /// - `data-i4a-nav`: Instagram's own bottom bar, replaced by the native one.
+    /// - `data-i4a-show-nav` on <html>: Instagram's bar is shown for a moment
+    ///   (its "new post" button was used; what it opens is anchored to it).
     /// - `data-i4a-blocked`: a Reel's <video>, kept hidden and paused.
     /// - `data-i4a-dm` on <html>: a DM conversation; the Reels shared there
     ///   stay visible and can be opened one at a time.
@@ -30,7 +32,7 @@ enum ContentScripts {
     html[data-i4a-reels] div:has(> a[href="/reels/"]:only-child),
     html[data-i4a-reels] li:has(> a[href="/reels/"]:only-child),
     html[data-i4a-reels][data-i4a-feed] article:has(a[href*="/reel/"]:not([href*="/explore/"])),
-    [data-i4a-nav] {
+    html:not([data-i4a-show-nav]) [data-i4a-nav] {
         display: none !important;
     }
     html[data-i4a-reels] video[data-i4a-blocked] {
@@ -335,6 +337,7 @@ enum ContentScripts {
             state.login = !!document.querySelector('input[type="password"]');
             // Instagram's sheets and viewers sit where the native bar is.
             state.overlay = hasOverlay();
+            state.navShown = document.documentElement.hasAttribute('data-i4a-show-nav');
             var serialized = JSON.stringify(state);
             if (serialized !== lastReport) {
               lastReport = serialized;
@@ -342,8 +345,41 @@ enum ContentScripts {
             }
           }
 
+          // Instagram's "new post" button opens a menu or the photo picker that
+          // belongs to its own bar, and the picker only opens for a real tap.
+          // So show its bar for a while: whatever opens is visible, and if
+          // nothing opened, its + is right there to tap directly.
+          var showNavUntil = 0;
+          var SHOW_NAV_FOR = 5000;
+
+          function showInstagramNav() {
+            showNavUntil = Date.now() + SHOW_NAV_FOR;
+            setFlag('data-i4a-show-nav', true);
+            setTimeout(refresh, SHOW_NAV_FOR + 50);
+          }
+
+          function updateShownNav() {
+            if (!document.documentElement.hasAttribute('data-i4a-show-nav')) { return; }
+            // Keep it while something it opened is still on screen.
+            if (Date.now() < showNavUntil || hasOverlay()) { return; }
+            setFlag('data-i4a-show-nav', false);
+          }
+
+          // The element that actually handles "new post": the one carrying its
+          // label, rather than a wrapper around it.
+          function createButton(item) {
+            var labelled = item.querySelectorAll('[aria-label]');
+            for (var i = 0; i < labelled.length; i++) {
+              if (/새로운 게시물|새 게시물|만들기|new post|create/i.test(labelled[i].getAttribute('aria-label') || '')) {
+                return labelled[i].closest('a, button, [role="button"], [role="link"]') || labelled[i];
+              }
+            }
+            return item;
+          }
+
           function refresh() {
             if (!ensureStyle()) { return; }
+            updateShownNav();
             findNav();
             improveLogin();
             releaseVideos();
@@ -365,7 +401,12 @@ enum ContentScripts {
               collectNavItems();
               var el = items[kind];
               if (!el || !el.isConnected) { return false; }
+              if (kind === 'create') {
+                showInstagramNav();
+                el = createButton(el);
+              }
               clickAs(el);
+              report();
               return true;
             }
           };
