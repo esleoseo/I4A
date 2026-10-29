@@ -13,6 +13,8 @@ final class WebController: NSObject, ObservableObject {
     @Published private(set) var pageHidesBar = false
     /// The user is scrolling down through content: shrink the bar.
     @Published private(set) var isBarCollapsed = false
+    /// The user's profile picture, from Instagram's own bar.
+    @Published private(set) var profileImageURL: URL?
     /// Bumped whenever a Reel was stopped from playing, to show a notice.
     @Published private(set) var blockedReelCount = 0
 
@@ -268,16 +270,16 @@ final class WebController: NSObject, ObservableObject {
         if hides != pageHidesBar { pageHidesBar = hides }
 
         // Instagram's own items; on pages where it drops its bar but people
-        // still need to get around (the DM inbox), the last ones seen. "New
-        // post" needs Instagram's own button, so it's left out there.
+        // still need to get around (the DM inbox), the last ones seen.
         var shown: [WebTab] = []
         if let navTabs = pageNavTabs {
             shown = navTabs
         } else if WebTab.keepsBarWithoutInstagramNav(onPath: path) {
-            let known = lastKnownTabs.isEmpty ? [.home, .explore, .direct, .profile] : lastKnownTabs
-            shown = known.filter { $0 != .create && ($0 != .profile || profilePath != nil) }
+            let known = lastKnownTabs.isEmpty ? [.home, .direct, .explore, .profile] : lastKnownTabs
+            shown = known.filter { $0 != .profile || profilePath != nil }
         }
-        shown.removeAll { hideReels && $0 == .reels }
+        // Like Instagram's app bar: no "new post" button.
+        shown.removeAll { $0 == .create || (hideReels && $0 == .reels) }
         if shown != tabs { tabs = shown }
     }
 
@@ -300,6 +302,10 @@ final class WebController: NSObject, ObservableObject {
         if let path = message["profile"] as? String, path.hasPrefix("/"), path != profilePath {
             profilePath = path
         }
+        if let avatar = (message["avatar"] as? String).flatMap(URL.init(string:)),
+           Self.isInstagramImage(avatar), avatar != profileImageURL {
+            profileImageURL = avatar
+        }
         let hasNav = message["nav"] as? Bool ?? false
         let kinds = (message["kinds"] as? [String] ?? []).compactMap(WebTab.init(rawValue:))
         let order = WebTab.allCases.filter { kinds.contains($0) }
@@ -309,6 +315,12 @@ final class WebController: NSObject, ObservableObject {
         pageHasOverlay = message["overlay"] as? Bool ?? false
         pageShowsInstagramNav = message["navShown"] as? Bool ?? false
         updatePageState()
+    }
+
+    /// Only pictures from Instagram's own image servers are loaded.
+    private static func isInstagramImage(_ url: URL) -> Bool {
+        guard url.scheme == "https", let host = url.host?.lowercased() else { return false }
+        return host.hasSuffix(".cdninstagram.com") || host.hasSuffix(".fbcdn.net")
     }
 
     private func setBarCollapsed(_ collapsed: Bool) {

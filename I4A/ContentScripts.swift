@@ -205,6 +205,7 @@ enum ContentScripts {
             items = {};
             var kinds = [];
             var profile = null;
+            var avatar = null;
             if (!nav) { return { kinds: kinds, profile: profile }; }
             var els = nav.querySelectorAll('a, button, [role="button"], [role="link"]');
             for (var i = 0; i < els.length; i++) {
@@ -212,9 +213,13 @@ enum ContentScripts {
               if (!kind || items[kind]) { continue; }
               items[kind] = els[i];
               kinds.push(kind);
-              if (kind === 'profile') { profile = els[i].getAttribute('href'); }
+              if (kind === 'profile') {
+                profile = els[i].getAttribute('href');
+                var img = els[i].querySelector('img');
+                if (img && /^https:/.test(img.src)) { avatar = img.src; }
+              }
             }
-            return { kinds: kinds, profile: profile };
+            return { kinds: kinds, profile: profile, avatar: avatar };
           }
 
           // Make iOS Password AutoFill and SMS code suggestions kick in.

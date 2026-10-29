@@ -30,6 +30,7 @@ struct ContentView: View {
                         tabs: web.tabs,
                         active: web.activeTab,
                         collapsed: web.isBarCollapsed,
+                        avatarURL: web.profileImageURL,
                         select: web.select
                     )
                     .padding(.bottom, web.isBarCollapsed ? 0 : 4)
@@ -102,12 +103,25 @@ private struct TopBar: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var tracker: UsageTracker
     @Binding var showSettings: Bool
+    @State private var showAbout = false
 
     var body: some View {
         HStack(spacing: 6) {
-            Text("I4A")
-                .font(.system(size: 13, weight: .heavy, design: .rounded))
-                .foregroundColor(.secondary)
+            Button {
+                showAbout = true
+            } label: {
+                Text("I4A")
+                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                    .foregroundColor(.secondary)
+                    .frame(height: 26)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("앱 정보")
+            .alert("Instagram for ADHDs", isPresented: $showAbout) {
+                Button("확인", role: .cancel) {}
+            } message: {
+                Text("이레를 위한 은성오빠의 사랑으로 제작됨")
+            }
             Spacer(minLength: 6)
             usageLabel
             Button {

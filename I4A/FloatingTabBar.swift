@@ -1,32 +1,84 @@
 import SwiftUI
 import UIKit
 
-/// Floating glass bottom bar in the style of Instagram's iOS app. It shrinks
-/// while scrolling down through content and grows back on scroll up.
+/// Floating glass bottom bar in the style of Instagram's iOS 26 app: icons
+/// spread over a wide capsule, a highlight that slides to the selected tab,
+/// and a finger dragged along the bar carries the highlight with it,
+/// opening the tab it is let go on. It shrinks while scrolling down through
+/// content and grows back on scroll up.
 struct FloatingTabBar: View {
     let tabs: [WebTab]
     let active: WebTab?
     let collapsed: Bool
+    let avatarURL: URL?
     let select: (WebTab) -> Void
 
+    /// The tab under the finger while it's on the bar.
+    @State private var touchedIndex: Int?
+    @Namespace private var highlight
+
+    private var highlightedIndex: Int? {
+        touchedIndex ?? active.flatMap { tabs.firstIndex(of: $0) }
+    }
+
     var body: some View {
-        HStack(spacing: collapsed ? 2 : 4) {
-            ForEach(tabs) { tab in
-                Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    select(tab)
-                } label: {
-                    TabIcon(tab: tab, selected: tab == active, collapsed: collapsed)
+        GeometryReader { proxy in
+            let itemWidth = proxy.size.width / CGFloat(max(tabs.count, 1))
+            HStack(spacing: 0) {
+                ForEach(Array(tabs.enumerated()), id: \.element) { index, tab in
+                    TabIcon(tab: tab, selected: tab == active, collapsed: collapsed, avatarURL: avatarURL)
+                        .frame(width: itemWidth, height: proxy.size.height)
+                        .background {
+                            if index == highlightedIndex {
+                                Capsule()
+                                    .fill(Color.primary.opacity(touchedIndex == nil ? 0.1 : 0.16))
+                                    .padding(.vertical, collapsed ? 3 : 5)
+                                    .padding(.horizontal, 2)
+                                    .scaleEffect(touchedIndex == nil ? 1 : 1.12)
+                                    .matchedGeometryEffect(id: "highlight", in: highlight)
+                            }
+                        }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(tab.title)
+                        .accessibilityAddTraits(tab == active ? [.isButton, .isSelected] : .isButton)
+                        .accessibilityAction { select(tab) }
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(tab.title)
-                .accessibilityAddTraits(tab == active ? .isSelected : [])
             }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let index = self.index(at: value.location.x, itemWidth: itemWidth)
+                        guard index != touchedIndex else { return }
+                        if touchedIndex == nil {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        } else {
+                            UISelectionFeedbackGenerator().selectionChanged()
+                        }
+                        touchedIndex = index
+                    }
+                    .onEnded { value in
+                        let index = self.index(at: value.location.x, itemWidth: itemWidth)
+                        touchedIndex = nil
+                        // Let go well away from the bar: cancelled.
+                        guard value.location.y > -60, value.location.y < proxy.size.height + 60,
+                              tabs.indices.contains(index) else { return }
+                        select(tabs[index])
+                    }
+            )
         }
-        .padding(.horizontal, collapsed ? 6 : 8)
-        .padding(.vertical, collapsed ? 4 : 6)
+        .frame(height: collapsed ? 46 : 60)
+        .padding(.horizontal, 4)
         .liquidGlassCapsule()
+        .padding(.horizontal, collapsed ? 64 : 18)
+        .animation(.spring(response: 0.3, dampingFraction: 0.78), value: highlightedIndex)
+        .animation(.spring(response: 0.3, dampingFraction: 0.78), value: touchedIndex == nil)
         .animation(.spring(response: 0.35, dampingFraction: 0.82), value: collapsed)
+    }
+
+    private func index(at x: CGFloat, itemWidth: CGFloat) -> Int {
+        guard itemWidth > 0, !tabs.isEmpty else { return 0 }
+        return min(max(Int(x / itemWidth), 0), tabs.count - 1)
     }
 }
 
@@ -34,17 +86,26 @@ private struct TabIcon: View {
     let tab: WebTab
     let selected: Bool
     let collapsed: Bool
+    let avatarURL: URL?
 
     var body: some View {
-        Image(systemName: tab.icon(selected: selected))
-            .font(.system(size: collapsed ? 17 : 22, weight: selected ? .semibold : .regular))
-            .foregroundColor(.primary)
-            .frame(width: collapsed ? 42 : 56, height: collapsed ? 34 : 46)
-            .background(
-                Capsule()
-                    .fill(Color.primary.opacity(selected ? 0.1 : 0))
-            )
-            .contentShape(Capsule())
+        if tab == .profile, let avatarURL {
+            let size: CGFloat = collapsed ? 22 : 27
+            AsyncImage(url: avatarURL) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                Circle().fill(Color.primary.opacity(0.15))
+            }
+            .frame(width: size, height: size)
+            .clipShape(Circle())
+            // Selected: a ring around the picture, as in Instagram's bar.
+            .padding(2)
+            .overlay(Circle().stroke(Color.primary, lineWidth: 1.5).opacity(selected ? 1 : 0))
+        } else {
+            Image(systemName: tab.icon(selected: selected))
+                .font(.system(size: collapsed ? 19 : 23, weight: selected ? .semibold : .regular))
+                .foregroundColor(.primary)
+        }
     }
 }
 

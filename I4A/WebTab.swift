@@ -1,8 +1,10 @@
 import Foundation
 
-/// An item of the native bottom bar, mirroring Instagram's own bottom bar.
+/// An item of the native bottom bar. Listed in the order of Instagram's iOS
+/// app bar (Home, Reels, Messages, Search, Profile). `create` is a web bar
+/// item only: the app's bar has no "new post" button, so neither has ours.
 enum WebTab: String, CaseIterable, Identifiable {
-    case home, explore, reels, create, direct, profile
+    case home, reels, direct, explore, profile, create
 
     var id: String { rawValue }
 
