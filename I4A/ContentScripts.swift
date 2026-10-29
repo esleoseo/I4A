@@ -472,6 +472,30 @@ enum ContentScripts {
             return parts.length > 3 ? parseFloat(parts[3]) : 1;
           }
 
+          // Bottom of the header pinned to the top of the page, if any: where
+          // the gap opens when the page is pulled down to refresh.
+          function headerBottom() {
+            var el = document.elementFromPoint(window.innerWidth / 2, 4);
+            for (var depth = 0; el && el !== document.body && el !== document.documentElement && depth < 25; depth++, el = el.parentElement) {
+              var position = getComputedStyle(el).position;
+              if (position !== 'fixed' && position !== 'sticky') { continue; }
+              var rect = el.getBoundingClientRect();
+              return rect.top <= 1 && rect.height < window.innerHeight / 3 ? Math.round(rect.bottom) : 0;
+            }
+            return 0;
+          }
+
+          // The color the page is painted in, from the element in the middle
+          // of the screen up to the root.
+          function pageBackground() {
+            var el = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
+            for (; el; el = el.parentElement) {
+              var alpha = backgroundAlpha(getComputedStyle(el).backgroundColor);
+              if (alpha === 1) { return getComputedStyle(el).backgroundColor; }
+            }
+            return null;
+          }
+
           function post(message) {
             try { window.webkit.messageHandlers.\(messageHandlerName).postMessage(message); } catch (e) {}
           }
@@ -480,6 +504,8 @@ enum ContentScripts {
             var state = collectNavItems();
             state.nav = !!nav;
             state.login = !!document.querySelector('input[type="password"]');
+            state.top = headerBottom();
+            state.bg = pageBackground();
             // Instagram's sheets and viewers sit where the native bar is.
             // Where that bar is hidden anyway, skip measuring the page.
             state.overlay = !NO_BAR.test(location.pathname) && hasOverlay();

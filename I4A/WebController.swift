@@ -24,6 +24,8 @@ final class WebController: NSObject, ObservableObject {
     private let configuration: WKWebViewConfiguration
     private let userContentController: WKUserContentController
     private var urlObservation: NSKeyValueObservation?
+    private var pullToRefresh: PullToRefresh?
+    private var pageBackground: String?
     private var pageHasLoginForm = false
     private var pageHasOverlay = false
     /// Items of Instagram's own bar on the current page; nil when it has none.
@@ -98,6 +100,7 @@ final class WebController: NSObject, ObservableObject {
         webView.frame = container.bounds
         webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         container.addSubview(webView)
+        pullToRefresh?.install(in: container)
     }
 
     private func makeWebView(frame: CGRect) -> WKWebView {
@@ -114,14 +117,17 @@ final class WebController: NSObject, ObservableObject {
         if #available(iOS 16.4, *) { webView.isInspectable = true }
         #endif
 
-        // No pull-to-refresh: it shifts the whole page down, which tears
-        // Instagram's fixed header away from the content. Refresh is tapping
-        // Home again at the top of the feed, as in Instagram's app.
+        // No UIRefreshControl: it shifts the whole page down, which tears
+        // Instagram's fixed header away from the content (see PullToRefresh).
+        // Tapping Home again at the top of the feed also refreshes.
         // The view runs under the home indicator. Left to adjust for it, the
         // scroll view treats that strip as covered, and iOS 26 paints it as a
         // solid band over the page, hiding what Instagram pins to the bottom
         // (the comment box). The page fills the whole view instead.
         webView.scrollView.contentInsetAdjustmentBehavior = .never
+        // Pull down to refresh, as in Instagram's app; short pages too.
+        webView.scrollView.alwaysBounceVertical = true
+        pullToRefresh = PullToRefresh(scrollView: webView.scrollView) { [weak self] in self?.reload() }
 
         // Instagram is a single-page app: moving between pages uses
         // history.pushState, which never reaches the navigation delegate.
@@ -309,6 +315,12 @@ final class WebController: NSObject, ObservableObject {
         let order = WebTab.allCases.filter { kinds.contains($0) }
         pageNavTabs = hasNav ? order : nil
         if hasNav && !order.isEmpty { lastKnownTabs = order }
+        if let top = message["top"] as? Double { pullToRefresh?.headerBottom = CGFloat(top) }
+        // The gap a pull opens shows the page's own background, not black.
+        if let background = message["bg"] as? String, background != pageBackground {
+            pageBackground = background
+            webView?.underPageBackgroundColor = UIColor(cssColor: background)
+        }
         pageHasLoginForm = message["login"] as? Bool ?? false
         pageHasOverlay = message["overlay"] as? Bool ?? false
         updatePageState()
@@ -427,14 +439,17 @@ extension WebController: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        pullToRefresh?.end()
         evaluate(ContentScripts.refreshJS)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        pullToRefresh?.end()
         handle(error, provisional: true)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        pullToRefresh?.end()
         handle(error, provisional: false)
     }
 
