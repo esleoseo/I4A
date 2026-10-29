@@ -9,6 +9,10 @@
 //   GET  /api/status   policy + latest usage (admin)
 //   PUT  /api/policy   update the policy (admin)
 //
+// Policy: { locked, reelsLocked, limitEnabled, dailyLimitMinutes, updatedAt }.
+// `locked` locks the time limit in the app; `reelsLocked` forces Reels
+// hiding on and locks that switch.
+//
 // Admin requests need `Authorization: Bearer <ADMIN_TOKEN>`; set the token
 // with `npx wrangler secret put ADMIN_TOKEN`.
 
@@ -16,6 +20,7 @@ import { DurableObject } from "cloudflare:workers";
 
 const DEFAULT_POLICY = {
   locked: false,
+  reelsLocked: false,
   limitEnabled: true,
   dailyLimitMinutes: 30,
   updatedAt: null,
@@ -23,7 +28,8 @@ const DEFAULT_POLICY = {
 
 export class Store extends DurableObject {
   async getPolicy() {
-    return (await this.ctx.storage.get("policy")) ?? DEFAULT_POLICY;
+    // Policies saved by older versions lack newer fields.
+    return { ...DEFAULT_POLICY, ...((await this.ctx.storage.get("policy")) ?? {}) };
   }
 
   async setPolicy(changes) {
@@ -116,6 +122,10 @@ function validatePolicyChanges(body) {
   if ("locked" in body) {
     if (typeof body.locked !== "boolean") return null;
     changes.locked = body.locked;
+  }
+  if ("reelsLocked" in body) {
+    if (typeof body.reelsLocked !== "boolean") return null;
+    changes.reelsLocked = body.reelsLocked;
   }
   if ("limitEnabled" in body) {
     if (typeof body.limitEnabled !== "boolean") return null;
@@ -228,7 +238,11 @@ const ADMIN_PAGE = `<!doctype html>
     <section class="card">
       <h2>관리</h2>
       <div class="row">
-        <div><div class="label">사용자 변경 막기</div><div class="hint">켜면 앱에서 시간 제한 메뉴를 만질 수 없어요</div></div>
+        <div><div class="label">릴스 숨기기 잠금</div><div class="hint">켜면 릴스가 항상 숨겨지고, 앱에서 끌 수 없어요</div></div>
+        <label class="switch"><input type="checkbox" id="reelsLocked"><span></span></label>
+      </div>
+      <div class="row">
+        <div><div class="label">시간 제한 잠금</div><div class="hint">켜면 앱에서 시간 제한 메뉴를 만질 수 없어요</div></div>
         <label class="switch"><input type="checkbox" id="locked"><span></span></label>
       </div>
       <div class="row">
@@ -311,6 +325,7 @@ const ADMIN_PAGE = `<!doctype html>
     policy = status.policy;
     report = status.report;
     $('locked').checked = policy.locked;
+    $('reelsLocked').checked = !!policy.reelsLocked;
     $('limitEnabled').checked = policy.limitEnabled;
     if (document.activeElement !== $('minutes')) $('minutes').value = policy.dailyLimitMinutes;
     $('limitCard').classList.toggle('disabled', !policy.limitEnabled);
@@ -388,6 +403,7 @@ const ADMIN_PAGE = `<!doctype html>
   };
   $('logout').onclick = function () { logout(); };
   $('locked').onchange = function () { save({ locked: this.checked }); };
+  $('reelsLocked').onchange = function () { save({ reelsLocked: this.checked }); };
   $('limitEnabled').onchange = function () { save({ limitEnabled: this.checked }); };
   $('minus').onclick = function () { setMinutes((Number($('minutes').value) || 0) - 5); };
   $('plus').onclick = function () { setMinutes((Number($('minutes').value) || 0) + 5); };

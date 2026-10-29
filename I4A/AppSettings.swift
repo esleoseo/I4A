@@ -4,10 +4,30 @@ import Foundation
 struct AdminPolicy: Codable, Equatable {
     /// The user can't change the time limit in the app.
     var locked: Bool
+    /// Reels hiding is forced on and the user can't switch it off.
+    var reelsLocked: Bool
     var limitEnabled: Bool
     var dailyLimitMinutes: Int
     /// When the admin last changed something; nil if never.
     var updatedAt: String?
+
+    init(locked: Bool, reelsLocked: Bool = false, limitEnabled: Bool, dailyLimitMinutes: Int, updatedAt: String?) {
+        self.locked = locked
+        self.reelsLocked = reelsLocked
+        self.limitEnabled = limitEnabled
+        self.dailyLimitMinutes = dailyLimitMinutes
+        self.updatedAt = updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        locked = try c.decode(Bool.self, forKey: .locked)
+        // Servers deployed before this field existed don't send it.
+        reelsLocked = try c.decodeIfPresent(Bool.self, forKey: .reelsLocked) ?? false
+        limitEnabled = try c.decode(Bool.self, forKey: .limitEnabled)
+        dailyLimitMinutes = try c.decode(Int.self, forKey: .dailyLimitMinutes)
+        updatedAt = try c.decodeIfPresent(String.self, forKey: .updatedAt)
+    }
 
     var isValid: Bool { AppSettings.allowedMinutes.contains(dailyLimitMinutes) }
 }
@@ -23,6 +43,7 @@ final class AppSettings: ObservableObject {
         static let limitEnabled = "settings.limitEnabled"
         static let dailyLimitMinutes = "settings.dailyLimitMinutes"
         static let managedByAdmin = "admin.locked"
+        static let reelsManagedByAdmin = "admin.reelsLocked"
         static let lastAdminUpdate = "admin.updatedAt"
     }
 
@@ -46,6 +67,11 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(isManagedByAdmin, forKey: Keys.managedByAdmin) }
     }
 
+    /// The admin forces Reels hiding on; the app's Reels switch is disabled.
+    @Published private(set) var isReelsManagedByAdmin: Bool {
+        didSet { defaults.set(isReelsManagedByAdmin, forKey: Keys.reelsManagedByAdmin) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [
@@ -58,6 +84,8 @@ final class AppSettings: ObservableObject {
         let minutes = defaults.integer(forKey: Keys.dailyLimitMinutes)
         dailyLimitMinutes = Self.allowedMinutes.contains(minutes) ? minutes : Self.defaultLimitMinutes
         isManagedByAdmin = defaults.bool(forKey: Keys.managedByAdmin)
+        isReelsManagedByAdmin = defaults.bool(forKey: Keys.reelsManagedByAdmin)
+        if isReelsManagedByAdmin { hideReels = true }
     }
 
     var dailyLimitSeconds: Int { dailyLimitMinutes * 60 }
@@ -82,5 +110,7 @@ final class AppSettings: ObservableObject {
         }
         if isNewChange { defaults.set(policy.updatedAt, forKey: Keys.lastAdminUpdate) }
         if isManagedByAdmin != policy.locked { isManagedByAdmin = policy.locked }
+        if policy.reelsLocked && !hideReels { hideReels = true }
+        if isReelsManagedByAdmin != policy.reelsLocked { isReelsManagedByAdmin = policy.reelsLocked }
     }
 }

@@ -87,4 +87,28 @@ final class AdminPolicyTests: XCTestCase {
         settings.limitEnabled = true
         XCTAssertTrue(settings.limitEnabled)
     }
+
+    func testReelsLockForcesHidingAndSurvivesRelaunch() {
+        let settings = AppSettings(defaults: defaults)
+        settings.hideReels = false
+        settings.apply(AdminPolicy(locked: false, reelsLocked: true, limitEnabled: true, dailyLimitMinutes: 30, updatedAt: "t1"))
+        XCTAssertTrue(settings.hideReels)
+        XCTAssertTrue(settings.isReelsManagedByAdmin)
+
+        let relaunched = AppSettings(defaults: defaults)
+        XCTAssertTrue(relaunched.isReelsManagedByAdmin)
+        XCTAssertTrue(relaunched.hideReels)
+
+        relaunched.apply(AdminPolicy(locked: false, reelsLocked: false, limitEnabled: true, dailyLimitMinutes: 30, updatedAt: "t2"))
+        XCTAssertFalse(relaunched.isReelsManagedByAdmin)
+        relaunched.hideReels = false
+        XCTAssertFalse(relaunched.hideReels)
+    }
+
+    func testDecodesPolicyWithoutReelsLock() throws {
+        let json = #"{"locked":false,"limitEnabled":true,"dailyLimitMinutes":30,"updatedAt":null}"#
+        XCTAssertFalse(try JSONDecoder().decode(AdminPolicy.self, from: Data(json.utf8)).reelsLocked)
+        let locked = #"{"locked":false,"reelsLocked":true,"limitEnabled":true,"dailyLimitMinutes":30,"updatedAt":null}"#
+        XCTAssertTrue(try JSONDecoder().decode(AdminPolicy.self, from: Data(locked.utf8)).reelsLocked)
+    }
 }

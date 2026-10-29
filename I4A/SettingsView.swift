@@ -25,8 +25,13 @@ struct SettingsView: View {
             Form {
                 Section {
                     Toggle("릴스 숨기기", isOn: $settings.hideReels)
+                        .disabled(settings.isReelsManagedByAdmin)
                 } footer: {
-                    Text("릴스 탭, 피드의 릴스, 프로필의 릴스 탭과 릴스 게시물을 숨기고 릴스 화면으로 이동하지 못하게 막아요.")
+                    if settings.isReelsManagedByAdmin {
+                        Label("관리자가 릴스를 숨기도록 잠갔어요. 앱에서는 바꿀 수 없어요.", systemImage: "lock.fill")
+                    } else {
+                        Text("릴스 탭, 피드의 릴스, 프로필의 릴스 탭과 릴스 게시물을 숨기고 릴스 화면으로 이동하지 못하게 막아요.")
+                    }
                 }
 
                 Section {
