@@ -7,4 +7,5 @@ build/
 *.dSYM.zip
 *.dSYM
 I4A/Config/Local.xcconfig
+I4A/Config/build-history.txt
 I4A.xcodeproj/project.xcworkspace/

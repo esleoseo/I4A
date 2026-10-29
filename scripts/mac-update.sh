@@ -4,7 +4,7 @@
 #   bash scripts/mac-update.sh
 #
 # 1. Xcode가 바꿔 놓은 파일(프로젝트 파일, 스킴)을 되돌려요. 그 전에 그 안에 있던
-#    개인 설정(서명 Team, 번들 ID)을 I4A/Config/Local.xcconfig로 옮겨 둬요.
+#    개인 설정(서명 Team, 번들 ID, 버전/빌드 번호)을 I4A/Config/Local.xcconfig로 옮겨 둬요.
 # 2. 그 밖에 직접 고친 파일이 있으면 지우지 않고 멈추고, 되돌리는 방법을 알려 줘요.
 # 3. git pull로 최신 코드를 받아요.
 # 4. 개인 설정(Local.xcconfig)이 제대로 있는지 보여 줘요. 관리자 서버 주소가 없으면
@@ -65,6 +65,16 @@ if modified "$PBXPROJ"; then
   if [ -n "$bundle" ] && [ "$bundle" != "$DEFAULT_BUNDLE_ID" ]; then
     set_local I4A_BUNDLE_ID "$bundle"
   fi
+  # Xcode의 General 탭에서 바꾼 버전/빌드 번호도 옮겨요(빌드 번호는 더 클 때만).
+  build=$(sed -n 's/.*CURRENT_PROJECT_VERSION = \([0-9]\{1,\}\);.*/\1/p' "$PBXPROJ" | head -n 1 || true)
+  head_build=$(git show HEAD:"$PBXPROJ" | sed -n 's/.*CURRENT_PROJECT_VERSION = \([0-9]\{1,\}\);.*/\1/p' | head -n 1 || true)
+  if [ -n "$build" ] && [ "$build" != "$head_build" ]; then
+    local_build=$( [ -f "$LOCAL" ] && sed -n 's/^CURRENT_PROJECT_VERSION = \([0-9]\{1,\}\)$/\1/p' "$LOCAL" | tail -n 1 || true)
+    if [ -z "$local_build" ] || [ "$build" -gt "$local_build" ]; then set_local CURRENT_PROJECT_VERSION "$build"; fi
+  fi
+  version=$(sed -n 's/.*MARKETING_VERSION = "\{0,1\}\([0-9.]\{1,\}\)"\{0,1\};.*/\1/p' "$PBXPROJ" | head -n 1 || true)
+  head_version=$(git show HEAD:"$PBXPROJ" | sed -n 's/.*MARKETING_VERSION = "\{0,1\}\([0-9.]\{1,\}\)"\{0,1\};.*/\1/p' | head -n 1 || true)
+  if [ -n "$version" ] && [ "$version" != "$head_version" ]; then set_local MARKETING_VERSION "$version"; fi
   git checkout HEAD -- "$PBXPROJ"
   info "되돌림: $PBXPROJ"
 fi

@@ -10,3 +10,7 @@ I4A_BUNDLE_ID = com.yourname.i4a
 
 // Admin server host, without https:// (see admin/README.md). Leave empty for no admin.
 I4A_ADMIN_HOST = i4a-admin.yourname.workers.dev
+
+// Version and build number; scripts/bump-build.sh keeps these up to date.
+MARKETING_VERSION = 1.0
+CURRENT_PROJECT_VERSION = 1
