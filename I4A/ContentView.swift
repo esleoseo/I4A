@@ -28,7 +28,7 @@ struct ContentView: View {
             TopBar(showSettings: $showSettings)
             ZStack(alignment: .bottom) {
                 // Runs under the home indicator: no dead strip at the bottom.
-                InstagramWebView(webView: web.webView)
+                InstagramWebView(controller: web)
                     .ignoresSafeArea(.container, edges: .bottom)
                 if showsTabBar {
                     FloatingTabBar(

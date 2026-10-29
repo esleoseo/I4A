@@ -16,10 +16,12 @@ final class WebController: NSObject, ObservableObject {
     /// Bumped whenever a Reel was stopped from playing, to show a notice.
     @Published private(set) var blockedReelCount = 0
 
-    let webView: WKWebView
+    /// Created only once it can go straight into a window; see `attach(to:)`.
+    private var webView: WKWebView?
+    private var refreshControl: UIRefreshControl?
 
+    private let configuration: WKWebViewConfiguration
     private let userContentController: WKUserContentController
-    private let refreshControl = UIRefreshControl()
     private var urlObservation: NSKeyValueObservation?
     private var pageHasLoginForm = false
     private var pageHasOverlay = false
@@ -74,9 +76,30 @@ final class WebController: NSObject, ObservableObject {
         let major = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
         config.applicationNameForUserAgent = "Version/\(major).0 Mobile/15E148 Safari/604.1"
 
-        webView = WKWebView(frame: .zero, configuration: config)
+        configuration = config
         super.init()
         messageProxy.target = self
+    }
+
+    /// Puts the web view into `container`, creating it the first time.
+    ///
+    /// Only called once the container is in a window. A web view made any
+    /// earlier (this controller is created while the app is still starting,
+    /// before its window exists) gets gesture recognizers without a touch
+    /// dispatcher, and on iOS 26 the first touch on it crashes the app:
+    /// NSArray nil insert in -[UIGestureRecognizer _delayTouchesForEvent:inPhase:].
+    func attach(to container: UIView) {
+        let webView = self.webView ?? makeWebView()
+        guard webView.superview !== container else { return }
+        webView.removeFromSuperview()
+        webView.frame = container.bounds
+        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        container.addSubview(webView)
+    }
+
+    private func makeWebView() -> WKWebView {
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        self.webView = webView
 
         webView.navigationDelegate = self
         webView.uiDelegate = self
@@ -88,13 +111,10 @@ final class WebController: NSObject, ObservableObject {
         if #available(iOS 16.4, *) { webView.isInspectable = true }
         #endif
 
+        let refreshControl = UIRefreshControl()
         refreshControl.addTarget(self, action: #selector(pullToRefresh), for: .valueChanged)
         webView.scrollView.refreshControl = refreshControl
-        // The scroll view's "delay touches until it's clear it's not a scroll"
-        // recognizer crashed the app on touch (NSArray nil insert in
-        // -[UIGestureRecognizer _delayTouchesForEvent:inPhase:]). The page
-        // tells taps from scrolls itself, so pass touches on right away.
-        webView.scrollView.delaysContentTouches = false
+        self.refreshControl = refreshControl
 
         // Instagram is a single-page app: moving between pages uses
         // history.pushState, which never reaches the navigation delegate.
@@ -103,7 +123,11 @@ final class WebController: NSObject, ObservableObject {
             DispatchQueue.main.async { self?.urlDidChange(webView.url) }
         }
 
+        // The limit may already have been reached before the page existed.
+        if isSuspended { applySuspension(to: webView) }
+
         webView.load(URLRequest(url: NavigationPolicy.homeURL))
+        return webView
     }
 
     deinit {
@@ -120,29 +144,35 @@ final class WebController: NSObject, ObservableObject {
         userContentController.removeAllUserScripts()
         userContentController.addUserScript(ContentScripts.userScript(hideReels: hide))
         evaluate(ContentScripts.setHideReelsJS(hide))
-        urlDidChange(webView.url)
+        if let webView { urlDidChange(webView.url) }
     }
 
     /// Freezes the page while the daily limit is reached.
     func setSuspended(_ suspended: Bool) {
         guard suspended != isSuspended else { return }
         isSuspended = suspended
-        webView.isUserInteractionEnabled = !suspended
-        if suspended {
+        guard let webView else { return } // applied when it's created
+        applySuspension(to: webView)
+        if !suspended && needsReload {
+            needsReload = false
+            reload()
+        }
+    }
+
+    private func applySuspension(to webView: WKWebView) {
+        webView.isUserInteractionEnabled = !isSuspended
+        if isSuspended {
             webView.pauseAllMediaPlayback(completionHandler: nil)
             webView.setAllMediaPlaybackSuspended(true, completionHandler: nil)
         } else {
             webView.setAllMediaPlaybackSuspended(false, completionHandler: nil)
-            if needsReload {
-                needsReload = false
-                reload()
-            }
         }
     }
 
     /// The content process may have been killed while in the background,
     /// leaving a blank page.
     func appDidBecomeActive() {
+        guard let webView else { return }
         if webView.url == nil && !webView.isLoading && !isSuspended {
             reload()
         }
@@ -151,6 +181,7 @@ final class WebController: NSObject, ObservableObject {
     /// Bottom bar tap. Taps Instagram's own (hidden) bar item so the page
     /// navigates as usual; tapping the current tab scrolls back to the top.
     func select(_ tab: WebTab) {
+        guard let webView else { return }
         setBarCollapsed(false)
         if tab == activeTab, tab != .create {
             webView.scrollView.setContentOffset(
@@ -163,26 +194,27 @@ final class WebController: NSObject, ObservableObject {
             if case .success(let value) = result, value as? Bool == true { return }
             guard let path = tab.fallbackPath(profilePath: self.profilePath),
                   let url = URL(string: path, relativeTo: NavigationPolicy.homeURL) else { return }
-            self.webView.load(URLRequest(url: url))
+            webView.load(URLRequest(url: url))
         }
     }
 
     /// Stops audio and video, e.g. while the settings sheet covers the page.
     func pauseMedia() {
-        webView.pauseAllMediaPlayback(completionHandler: nil)
+        webView?.pauseAllMediaPlayback(completionHandler: nil)
     }
 
     func retry() {
         loadError = nil
         lastTermination = nil
         if let failedURL {
-            webView.load(URLRequest(url: failedURL))
+            webView?.load(URLRequest(url: failedURL))
         } else {
             reload()
         }
     }
 
     func reload() {
+        guard let webView else { return }
         if webView.url == nil {
             webView.load(URLRequest(url: NavigationPolicy.homeURL))
         } else {
@@ -201,7 +233,7 @@ final class WebController: NSObject, ObservableObject {
     }
 
     private func endRefreshing() {
-        if refreshControl.isRefreshing { refreshControl.endRefreshing() }
+        if let refreshControl, refreshControl.isRefreshing { refreshControl.endRefreshing() }
     }
 
     private func urlDidChange(_ url: URL?) {
@@ -228,7 +260,7 @@ final class WebController: NSObject, ObservableObject {
     }
 
     private func updatePageState() {
-        let path = webView.url.flatMap { NavigationPolicy.isInstagramHost($0.host) ? $0.path : nil } ?? ""
+        let path = webView?.url.flatMap { NavigationPolicy.isInstagramHost($0.host) ? $0.path : nil } ?? ""
         let active = WebTab.active(forPath: path, profilePath: profilePath)
         if active != activeTab { activeTab = active }
         let hides = path.isEmpty || pageHasLoginForm || pageHasOverlay || pageShowsInstagramNav ||
@@ -288,31 +320,31 @@ final class WebController: NSObject, ObservableObject {
         guard !bounceScheduled else { return }
         bounceScheduled = true
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
+            guard let self, let webView = self.webView else { return }
             self.bounceScheduled = false
-            guard self.hideReels, NavigationPolicy.isReels(self.webView.url),
-                  !self.isGranted(self.webView.url) else { return }
+            guard self.hideReels, NavigationPolicy.isReels(webView.url),
+                  !self.isGranted(webView.url) else { return }
             let now = Date()
             self.recentBounces = self.recentBounces.filter { now.timeIntervalSince($0) < 3 } + [now]
             if self.recentBounces.count >= 3 {
                 // Stepping back keeps landing on Reels: start over from home
                 // with a fresh page, which also resets the page's own state.
                 self.recentBounces.removeAll()
-                self.webView.load(URLRequest(url: NavigationPolicy.homeURL))
+                webView.load(URLRequest(url: NavigationPolicy.homeURL))
                 return
             }
             // The nearest earlier page that isn't a Reel, e.g. the DM a tapped
             // Reel was opened from when the user swipes on to the next one.
-            if let back = self.webView.backForwardList.backList.last(where: { !NavigationPolicy.isReels($0.url) }) {
-                self.webView.go(to: back)
+            if let back = webView.backForwardList.backList.last(where: { !NavigationPolicy.isReels($0.url) }) {
+                webView.go(to: back)
             } else {
-                self.webView.load(URLRequest(url: NavigationPolicy.homeURL))
+                webView.load(URLRequest(url: NavigationPolicy.homeURL))
             }
         }
     }
 
     private func evaluate(_ js: String) {
-        webView.evaluateJavaScript(js, in: nil, in: ContentScripts.world, completionHandler: nil)
+        webView?.evaluateJavaScript(js, in: nil, in: ContentScripts.world, completionHandler: nil)
     }
 
     private func openExternally(_ url: URL) {
@@ -332,7 +364,7 @@ final class WebController: NSObject, ObservableObject {
 
     /// The view controller currently on top, for presenting JavaScript dialogs.
     private func presenter() -> UIViewController? {
-        var top = webView.window?.rootViewController
+        var top = webView?.window?.rootViewController
         while let presented = top?.presentedViewController { top = presented }
         return top
     }
@@ -514,49 +546,34 @@ private final class MessageProxy: NSObject, WKScriptMessageHandler {
 
 // MARK: - SwiftUI bridge
 
-/// Hosts the one long-lived web view in a container of its own, so it's
-/// moved cleanly whenever SwiftUI builds a new container, instead of being
-/// handed to SwiftUI directly from several places.
+/// Shows the web view. It's created (and moved in) only when the container
+/// is in a window; see `WebController.attach(to:)`.
 struct InstagramWebView: UIViewRepresentable {
-    let webView: WKWebView
+    let controller: WebController
 
-    func makeUIView(context: Context) -> UIView {
+    func makeUIView(context: Context) -> WebViewContainer {
         let container = WebViewContainer()
         container.backgroundColor = .clear
-        attach(to: container)
+        container.controller = controller
         return container
     }
 
-    func updateUIView(_ container: UIView, context: Context) {
-        if webView.superview !== container { attach(to: container) }
-    }
-
-    private func attach(to container: UIView) {
-        webView.removeFromSuperview()
-        webView.frame = container.bounds
-        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        container.addSubview(webView)
+    func updateUIView(_ container: WebViewContainer, context: Context) {
+        container.controller = controller
+        container.attachIfInWindow()
     }
 }
 
-/// Turns off touch delaying on every scroll view a touch lands in, right
-/// before UIKit hands the touch to their gesture recognizers.
-///
-/// A scroll view's delayed-touches recognizer crashed the app on touch
-/// (NSArray nil insert in -[UIGestureRecognizer _delayTouchesForEvent:inPhase:]).
-/// Besides its main scroll view, the web view creates more of them on the fly
-/// for each scrollable area of the page (WKChildScrollView), so they're
-/// handled where the touch is, at hit-testing time, not once up front.
 final class WebViewContainer: UIView {
-    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        let hit = super.hitTest(point, with: event)
-        var view = hit
-        while let current = view, current !== self {
-            if let scrollView = current as? UIScrollView, scrollView.delaysContentTouches {
-                scrollView.delaysContentTouches = false
-            }
-            view = current.superview
-        }
-        return hit
+    weak var controller: WebController?
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        attachIfInWindow()
+    }
+
+    func attachIfInWindow() {
+        guard window != nil else { return }
+        controller?.attach(to: self)
     }
 }
