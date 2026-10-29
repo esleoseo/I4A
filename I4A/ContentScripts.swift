@@ -427,22 +427,6 @@ enum ContentScripts {
             return false;
           }
 
-          // The color showing at the very bottom of the page (a sheet's gray,
-          // the feed's black, ...), so the app can paint the strip under the
-          // home indicator to match, as Safari does.
-          function bottomColor() {
-            var el = document.elementFromPoint(window.innerWidth / 2, window.innerHeight - 2);
-            for (; el; el = el.parentElement) {
-              var color = getComputedStyle(el).backgroundColor;
-              var match = /rgba?\\(([^)]+)\\)/.exec(color || '');
-              if (!match) { continue; }
-              var parts = match[1].split(',');
-              if (parts.length > 3 && parseFloat(parts[3]) < 0.5) { continue; }
-              return color;
-            }
-            return null;
-          }
-
           function post(message) {
             try { window.webkit.messageHandlers.\(messageHandlerName).postMessage(message); } catch (e) {}
           }
@@ -454,7 +438,6 @@ enum ContentScripts {
             // Instagram's sheets and viewers sit where the native bar is.
             state.overlay = hasOverlay();
             state.navShown = document.documentElement.hasAttribute('data-i4a-show-nav');
-            state.bottomColor = bottomColor();
             var serialized = JSON.stringify(state);
             if (serialized !== lastReport) {
               lastReport = serialized;

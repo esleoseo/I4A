@@ -15,9 +15,6 @@ final class WebController: NSObject, ObservableObject {
     @Published private(set) var isBarCollapsed = false
     /// Bumped whenever a Reel was stopped from playing, to show a notice.
     @Published private(set) var blockedReelCount = 0
-    /// The color at the very bottom of the page, for the strip under the
-    /// home indicator; nil when unknown.
-    @Published private(set) var bottomColor: UIColor?
 
     /// Created only once it can go straight into a window; see `attach(to:)`.
     private var webView: WKWebView?
@@ -117,6 +114,11 @@ final class WebController: NSObject, ObservableObject {
         let refreshControl = UIRefreshControl()
         refreshControl.addTarget(self, action: #selector(pullToRefresh), for: .valueChanged)
         webView.scrollView.refreshControl = refreshControl
+        // The view runs under the home indicator. Left to adjust for it, the
+        // scroll view treats that strip as covered, and iOS 26 paints it as a
+        // solid band over the page, hiding what Instagram pins to the bottom
+        // (the comment box). The page fills the whole view instead.
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
         self.refreshControl = refreshControl
 
         // Instagram is a single-page app: moving between pages uses
@@ -311,18 +313,7 @@ final class WebController: NSObject, ObservableObject {
         pageHasLoginForm = message["login"] as? Bool ?? false
         pageHasOverlay = message["overlay"] as? Bool ?? false
         pageShowsInstagramNav = message["navShown"] as? Bool ?? false
-        let color = (message["bottomColor"] as? String).flatMap(Self.color(css:))
-        if color != bottomColor { bottomColor = color }
         updatePageState()
-    }
-
-    /// "rgb(38, 38, 38)" / "rgba(0, 0, 0, 1)" → opaque UIColor; nil if unreadable
-    /// or mostly transparent.
-    static func color(css: String) -> UIColor? {
-        let numbers = css.split(whereSeparator: { !"0123456789.".contains($0) }).compactMap { Double($0) }
-        guard numbers.count >= 3 else { return nil }
-        if numbers.count >= 4, numbers[3] < 0.5 { return nil }
-        return UIColor(red: numbers[0] / 255, green: numbers[1] / 255, blue: numbers[2] / 255, alpha: 1)
     }
 
     private func setBarCollapsed(_ collapsed: Bool) {

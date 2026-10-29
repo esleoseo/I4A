@@ -1,4 +1,3 @@
-import UIKit
 import XCTest
 @testable import I4A
 
@@ -36,15 +35,5 @@ final class WebTabTests: XCTestCase {
         XCTAssertTrue(WebTab.keepsBarWithoutInstagramNav(onPath: "/direct/requests/"))
         XCTAssertFalse(WebTab.keepsBarWithoutInstagramNav(onPath: "/direct/t/123/"))
         XCTAssertFalse(WebTab.keepsBarWithoutInstagramNav(onPath: "/p/abc/"))
-    }
-
-    func testBottomColorParsing() {
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        WebController.color(css: "rgb(38, 38, 38)")?.getRed(&r, green: &g, blue: &b, alpha: &a)
-        XCTAssertEqual(r, 38 / 255, accuracy: 0.001)
-        XCTAssertEqual(a, 1)
-        XCTAssertNotNil(WebController.color(css: "rgba(255, 255, 255, 1)"))
-        XCTAssertNil(WebController.color(css: "rgba(0, 0, 0, 0)"))
-        XCTAssertNil(WebController.color(css: "transparent"))
     }
 }
