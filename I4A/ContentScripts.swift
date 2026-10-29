@@ -364,16 +364,21 @@ enum ContentScripts {
             }
           }, true);
 
-          // Lets videos go again once they're no longer a Reel player (Reels
-          // switched off, or the element reused for something else).
+          // A tile can stay without a size (display: none, e.g. under the
+          // search panel), so waiting for one to be laid out gives up after
+          // a few tries, rather than polling for as long as Explore is open.
+          // Measuring a tile, or leaving Explore, starts it over.
+          var tileRetries = 0;
+
           // Explore shows Reels as tall (1:2) tiles that link to /p/CODE/, so
           // the link rules miss them. Tell them apart by shape or by the Reels
           // icon on them. Each tile is measured once per link it carries
           // (the grid reuses its tiles as it scrolls).
           function hideReelTiles() {
-            if (!hide || location.pathname.indexOf('/explore') !== 0) { return; }
+            if (!hide || location.pathname.indexOf('/explore') !== 0) { tileRetries = 0; return; }
             var tiles = document.querySelectorAll('a[href*="/p/"]');
             var unmeasured = false;
+            var measured = false;
             for (var i = 0; i < tiles.length; i++) {
               var tile = tiles[i];
               var href = tile.getAttribute('href');
@@ -381,6 +386,7 @@ enum ContentScripts {
               var rect = tile.getBoundingClientRect();
               if (!rect.width || !rect.height) { unmeasured = true; continue; } // not laid out yet
               tile.__i4aHref = href;
+              measured = true;
               var icon = tile.querySelector('svg[aria-label]');
               var label = icon ? icon.getAttribute('aria-label') : '';
               var reel = /릴스|reel|clip/i.test(label) || rect.height / rect.width >= 1.5;
@@ -388,9 +394,15 @@ enum ContentScripts {
                 if (reel) { tile.setAttribute('data-i4a-reel-tile', ''); } else { tile.removeAttribute('data-i4a-reel-tile'); }
               }
             }
-            if (unmeasured) { setTimeout(schedule, 300); }
+            if (measured) { tileRetries = 0; }
+            if (unmeasured && tileRetries < 10) {
+              tileRetries++;
+              setTimeout(schedule, 300);
+            }
           }
 
+          // Lets videos go again once they're no longer a Reel player (Reels
+          // switched off, or the element reused for something else).
           function releaseVideos() {
             var blocked = document.querySelectorAll('video[data-i4a-blocked]');
             for (var i = 0; i < blocked.length; i++) {
