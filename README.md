@@ -1,12 +1,15 @@
 # I4A — Instagram for ADHDs
 
 인스타그램을 **릴스 없이**, **하루 정해진 시간만큼만** 쓰게 해 주는 가벼운 아이폰 앱입니다.
-Social Lite처럼 인스타그램 모바일 웹(instagram.com)을 앱 안에서 열고, 그 위에 두 가지 기능을 얹었습니다.
+Social Lite처럼 인스타그램 모바일 웹(instagram.com)을 앱 안에서 열고, 그 위에 아래 기능을 얹었습니다.
 
 | 기능 | 설명 |
 | --- | --- |
 | 릴스 숨기기 | 하단 릴스 탭, 피드 속 릴스 게시물, 프로필의 릴스 탭, 탐색·그리드의 릴스 타일을 숨기고, 릴스 화면(`/reels/`, `/reel/…`)으로 이동하면 바로 이전 화면으로 되돌립니다. |
 | 하루 시간 제한 | 5분~3시간 중 하루 허용 시간을 고르면, 앱이 화면에 켜져 있는 동안만 시간이 흐릅니다. 다 쓰면 화면이 잠기고 영상이 멈추며, 자정에 초기화됩니다. 제한에 도달한 날에는 제한을 늘리거나 끌 수 없습니다. |
+| 관리자 페이지 | 보호자/관리자가 앱 밖의 웹페이지에서 하루 허용 시간을 바로 바꾸고, 사용자가 앱에서 못 바꾸게 잠글 수 있습니다. 오늘 사용 시간과 인스타그램 앱 설치 여부도 보입니다. 설정법은 [`admin/README.md`](admin/README.md). |
+| 인스타그램 앱 감지 | 기기에 원래 인스타그램 앱이 깔려 있으면, I4A에 들어올 때마다 "인스타그램 앱을 삭제하세요" 알림을 띄우고 알림(푸시)도 보냅니다. |
+| 인스타그램 스타일 UI | 하단 플로팅 리퀴드 글라스 탭 바(iOS 26, 그 이전은 반투명 재질). 아래로 스크롤하면 작아지고 위로 스크롤하면 커집니다. |
 
 ## 설계
 
@@ -28,10 +31,15 @@ I4A/
 ├─ ContentScripts.swift  릴스 숨김 CSS/JS
 ├─ NavigationPolicy.swift URL 판정(릴스·허용 도메인) — 순수 로직
 ├─ UsageTracker.swift    하루 사용 시간 측정·저장
-├─ AppSettings.swift     설정(UserDefaults)
+├─ AppSettings.swift     설정(UserDefaults), 관리자 정책 적용
+├─ AdminSync.swift       관리자 서버와 동기화(정책 받기, 사용량·설치 여부 보고)
+├─ InstagramApp.swift    인스타그램 앱 감지, 알림, 백그라운드 확인
+├─ FloatingTabBar.swift  하단 플로팅 글라스 탭 바
+├─ WebTab.swift          탭 정의, 탭별 경로
 ├─ SettingsView.swift    설정 화면
 └─ LimitReachedView.swift 시간 초과 화면
-I4ATests/                단위 테스트 (URL 판정, 시간 측정, 설정)
+I4ATests/                단위 테스트 (URL 판정, 시간 측정, 설정, 관리자 정책, 탭)
+admin/                   관리자 페이지 + API (Cloudflare Worker)
 ```
 
 ## 설치 (내 아이폰에 직접)
@@ -50,6 +58,15 @@ xcodebuild test -project I4A.xcodeproj -scheme I4A -destination 'platform=iOS Si
 ```
 
 GitHub Actions(`.github/workflows/ci.yml`)가 푸시마다 시뮬레이터 테스트와 기기용 Release 빌드를 돌립니다.
+
+## 인스타그램 앱 감지와 알림
+
+- 감지: iOS에 `instagram://` 주소를 열 수 있는지 물어봅니다(`Info.plist`의 `LSApplicationQueriesSchemes`).
+- I4A를 열 때마다 설치되어 있으면 경고 창을 띄웁니다.
+- 알림은 서버 푸시가 아닌 **로컬 알림**입니다. 진짜 원격 푸시(APNs)는 유료 Apple 개발자 계정과 별도 서버 설정이 필요해서입니다. 대신 두 가지로 보냅니다.
+  - I4A를 나갈 때 인스타그램이 깔려 있으면 30분 뒤 알림을 예약합니다.
+  - iOS가 가끔(보통 몇 시간 간격, 시스템이 결정) I4A를 백그라운드에서 깨우면, 다시 확인해서 최대 3시간에 한 번 알림을 보내고 관리자 서버에 보고합니다.
+- 처음 실행할 때 알림 허용을 물어봅니다. 허용해야 알림이 옵니다.
 
 ## 알려진 한계
 

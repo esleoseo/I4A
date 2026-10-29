@@ -170,8 +170,13 @@ final class AppSettingsTests: XCTestCase {
     }
 
     func testInvalidStoredLimitFallsBackToDefault() {
-        defaults.set(7, forKey: "settings.dailyLimitMinutes")
+        defaults.set(0, forKey: "settings.dailyLimitMinutes")
         XCTAssertEqual(AppSettings(defaults: defaults).dailyLimitMinutes, AppSettings.defaultLimitMinutes)
+        defaults.set(5_000, forKey: "settings.dailyLimitMinutes")
+        XCTAssertEqual(AppSettings(defaults: defaults).dailyLimitMinutes, AppSettings.defaultLimitMinutes)
+        // Values the admin may set outside the presets are kept.
+        defaults.set(7, forKey: "settings.dailyLimitMinutes")
+        XCTAssertEqual(AppSettings(defaults: defaults).dailyLimitMinutes, 7)
     }
 
     func testLimitReached() {

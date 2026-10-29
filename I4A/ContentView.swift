@@ -4,10 +4,12 @@ struct ContentView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var tracker: UsageTracker
     @EnvironmentObject private var web: WebController
+    @EnvironmentObject private var adminSync: AdminSync
     @Environment(\.scenePhase) private var scenePhase
     @State private var showSettings = false
     @State private var showReelNotice = false
     @State private var noticeToken = 0
+    @State private var showInstagramAlert = false
 
     private var isBlocked: Bool {
         settings.isLimitReached(usedSeconds: tracker.usedSeconds)
@@ -65,7 +67,21 @@ struct ContentView: View {
         .onChange(of: showSettings) { _ in syncState() }
         .onChange(of: scenePhase) { phase in
             syncState()
-            if phase == .active { web.appDidBecomeActive() }
+            switch phase {
+            case .active:
+                web.appDidBecomeActive()
+                InstagramApp.appDidBecomeActive()
+                if InstagramApp.isInstalled { showInstagramAlert = true }
+            case .background:
+                InstagramApp.appDidEnterBackground()
+            default:
+                break
+            }
+        }
+        .alert(InstagramApp.alertTitle, isPresented: $showInstagramAlert) {
+            Button("확인", role: .cancel) {}
+        } message: {
+            Text(InstagramApp.alertMessage)
         }
         .onChange(of: settings.hideReels) { hide in
             web.setHideReels(hide)
@@ -85,6 +101,7 @@ struct ContentView: View {
         web.setSuspended(isBlocked)
         if showSettings { web.pauseMedia() }
         tracker.update(active: active, counting: !isBlocked && !showSettings)
+        adminSync.setActive(active)
     }
 }
 

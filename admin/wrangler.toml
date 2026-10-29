@@ -1,0 +1,13 @@
+# Cloudflare Worker serving the I4A admin page and the policy API.
+# Deploy: see admin/README.md
+name = "i4a-admin"
+main = "worker.js"
+compatibility_date = "2025-06-01"
+
+[[durable_objects.bindings]]
+name = "STORE"
+class_name = "Store"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Store"]

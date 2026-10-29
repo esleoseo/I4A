@@ -12,8 +12,12 @@ struct SettingsView: View {
     }
 
     private var limitOptions: [Int] {
-        guard isLocked else { return AppSettings.limitOptions }
-        return AppSettings.limitOptions.filter { $0 <= settings.dailyLimitMinutes }
+        // The admin may have set a value outside the presets.
+        var options = Set(AppSettings.limitOptions)
+        options.insert(settings.dailyLimitMinutes)
+        let sorted = options.sorted()
+        guard isLocked else { return sorted }
+        return sorted.filter { $0 <= settings.dailyLimitMinutes }
     }
 
     var body: some View {
@@ -26,15 +30,18 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Toggle("하루 사용 시간 제한", isOn: $settings.limitEnabled)
-                        .disabled(isLocked)
-                    if settings.limitEnabled {
-                        Picker("하루 허용 시간", selection: $settings.dailyLimitMinutes) {
-                            ForEach(limitOptions, id: \.self) { minutes in
-                                Text(TimeFormat.short(minutes * 60)).tag(minutes)
+                    Group {
+                        Toggle("하루 사용 시간 제한", isOn: $settings.limitEnabled)
+                            .disabled(isLocked)
+                        if settings.limitEnabled {
+                            Picker("하루 허용 시간", selection: $settings.dailyLimitMinutes) {
+                                ForEach(limitOptions, id: \.self) { minutes in
+                                    Text(TimeFormat.short(minutes * 60)).tag(minutes)
+                                }
                             }
                         }
                     }
+                    .disabled(settings.isManagedByAdmin)
                     HStack {
                         Text("오늘 사용한 시간")
                         Spacer()
@@ -45,7 +52,9 @@ struct SettingsView: View {
                 } header: {
                     Text("시간 제한")
                 } footer: {
-                    if isLocked {
+                    if settings.isManagedByAdmin {
+                        Label("관리자가 시간 제한을 관리하고 있어요. 앱에서는 바꿀 수 없어요.", systemImage: "lock.fill")
+                    } else if isLocked {
                         Text("오늘은 제한 시간에 도달해서 제한을 늘리거나 끌 수 없어요. 자정에 초기화돼요.")
                     } else {
                         Text("앱이 화면에 켜져 있는 동안만 시간이 흘러요. 매일 자정에 초기화돼요.")

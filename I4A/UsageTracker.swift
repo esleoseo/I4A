@@ -71,6 +71,24 @@ final class UsageTracker: ObservableObject {
         timer?.invalidate()
     }
 
+    /// The day `usedSeconds` belongs to, as "yyyy-MM-dd".
+    var day: String { ledger.day }
+
+    /// Today's usage as last saved, for code running without a tracker
+    /// (the background refresh task).
+    static func storedUsage(
+        defaults: UserDefaults = .standard,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> (day: String, seconds: Int) {
+        let stored = UsageLedger(
+            day: defaults.string(forKey: Keys.day) ?? "",
+            seconds: max(0, defaults.double(forKey: Keys.seconds))
+        )
+        let today = stored.rolledOver(to: now, calendar: calendar)
+        return (today.day, Int(today.seconds))
+    }
+
     /// - Parameters:
     ///   - active: the app is in the foreground. The clock only runs while active.
     ///   - counting: Instagram is actually usable on screen right now.
