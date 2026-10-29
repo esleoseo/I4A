@@ -87,8 +87,12 @@ final class WebController: NSObject, ObservableObject {
     /// before its window exists) gets gesture recognizers without a touch
     /// dispatcher, and on iOS 26 the first touch on it crashes the app:
     /// NSArray nil insert in -[UIGestureRecognizer _delayTouchesForEvent:inPhase:].
+    /// It's also made only once the container has its size: a page that
+    /// starts loading in a zero-size view lays itself out for the wrong
+    /// width and comes up zoomed in, cut off at the right.
     func attach(to container: UIView) {
-        let webView = self.webView ?? makeWebView()
+        guard self.webView != nil || !container.bounds.isEmpty else { return }
+        let webView = self.webView ?? makeWebView(frame: container.bounds)
         guard webView.superview !== container else { return }
         webView.removeFromSuperview()
         webView.frame = container.bounds
@@ -96,8 +100,8 @@ final class WebController: NSObject, ObservableObject {
         container.addSubview(webView)
     }
 
-    private func makeWebView() -> WKWebView {
-        let webView = WKWebView(frame: .zero, configuration: configuration)
+    private func makeWebView(frame: CGRect) -> WKWebView {
+        let webView = WKWebView(frame: frame, configuration: configuration)
         self.webView = webView
 
         webView.navigationDelegate = self
@@ -540,7 +544,7 @@ private final class MessageProxy: NSObject, WKScriptMessageHandler {
 // MARK: - SwiftUI bridge
 
 /// Shows the web view. It's created (and moved in) only when the container
-/// is in a window; see `WebController.attach(to:)`.
+/// is in a window and has its size; see `WebController.attach(to:)`.
 struct InstagramWebView: UIViewRepresentable {
     let controller: WebController
 
@@ -562,6 +566,11 @@ final class WebViewContainer: UIView {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
+        attachIfInWindow()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
         attachIfInWindow()
     }
 

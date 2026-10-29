@@ -59,39 +59,6 @@ struct ReelNotice: View {
     }
 }
 
-/// Asks the user to delete the official Instagram app; dismissible.
-struct InstagramInstalledBanner: View {
-    let dismiss: () -> Void
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.orange)
-                .font(.system(size: 20))
-            VStack(alignment: .leading, spacing: 4) {
-                Text(InstagramApp.alertTitle)
-                    .font(.subheadline.weight(.bold))
-                Text(InstagramApp.alertMessage)
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-            Button(action: dismiss) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.secondary)
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("닫기")
-        }
-        .padding(14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .shadow(color: .black.opacity(0.18), radius: 14, y: 4)
-    }
-}
-
 extension View {
     /// Liquid Glass on iOS 26; a translucent material capsule before that.
     #if compiler(>=6.2)

@@ -441,11 +441,29 @@ enum ContentScripts {
                 if (el.hasAttribute('data-i4a-nav')) { break; }
                 if (getComputedStyle(el).position !== 'fixed') { continue; }
                 if (el.querySelector('main, [role="main"]') || (nav && el.contains(nav))) { break; }
+                if (isPageFrame(el)) { break; }
                 if (el.getBoundingClientRect().height >= 44) { return true; }
                 break;
               }
             }
             return false;
+          }
+
+          // A fixed layer spanning the whole screen with no dimmed backdrop
+          // is the page itself (the DM inbox is laid out like this), not a
+          // sheet over it.
+          function isPageFrame(el) {
+            var rect = el.getBoundingClientRect();
+            if (rect.top > 1 || rect.bottom < window.innerHeight - 1) { return false; }
+            var alpha = backgroundAlpha(getComputedStyle(el).backgroundColor);
+            return alpha === 0 || alpha === 1;
+          }
+
+          function backgroundAlpha(color) {
+            var match = /rgba?\\(([^)]*)\\)/.exec(color || '');
+            if (!match) { return 0; }
+            var parts = match[1].split(/[,\\/\\s]+/).filter(Boolean);
+            return parts.length > 3 ? parseFloat(parts[3]) : 1;
           }
 
           function post(message) {

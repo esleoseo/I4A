@@ -10,8 +10,8 @@ import UserNotifications
 /// refresh, which iOS runs at its own discretion.
 enum InstagramApp {
     static let refreshTaskID = "com.esleoseo.i4a.refresh"
-    static let alertTitle = "인스타그램 앱을 삭제하세요"
-    static let alertMessage = "이 기기에 인스타그램 앱이 설치되어 있어요. 인스타그램은 I4A로만 쓰고, 원래 앱은 삭제해 주세요."
+    static let reminderTitle = "인스타그램 앱을 삭제하세요"
+    static let reminderMessage = "이 기기에 인스타그램 앱이 설치되어 있어요. 인스타그램은 I4A로만 쓰고, 원래 앱은 삭제해 주세요."
 
     private static let reminderID = "i4a.instagram-installed"
     private static let lastNotifiedKey = "reminder.lastNotified"
@@ -40,7 +40,7 @@ enum InstagramApp {
         center.add(UNNotificationRequest(identifier: reminderID, content: content(), trigger: trigger))
     }
 
-    /// Back in I4A: the in-app alert takes over from pending reminders.
+    /// Back in I4A: no reminder while it's in use.
     static func appDidBecomeActive() {
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [reminderID])
     }
@@ -76,8 +76,8 @@ enum InstagramApp {
 
     private static func content() -> UNMutableNotificationContent {
         let content = UNMutableNotificationContent()
-        content.title = alertTitle
-        content.body = alertMessage
+        content.title = reminderTitle
+        content.body = reminderMessage
         content.sound = .default
         return content
     }
