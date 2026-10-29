@@ -532,10 +532,27 @@ private final class MessageProxy: NSObject, WKScriptMessageHandler {
 
 // MARK: - SwiftUI bridge
 
+/// Hosts the one long-lived web view in a container of its own, so it's
+/// moved cleanly whenever SwiftUI builds a new container, instead of being
+/// handed to SwiftUI directly from several places.
 struct InstagramWebView: UIViewRepresentable {
     let webView: WKWebView
 
-    func makeUIView(context: Context) -> WKWebView { webView }
+    func makeUIView(context: Context) -> UIView {
+        let container = UIView()
+        container.backgroundColor = .clear
+        attach(to: container)
+        return container
+    }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    func updateUIView(_ container: UIView, context: Context) {
+        if webView.superview !== container { attach(to: container) }
+    }
+
+    private func attach(to container: UIView) {
+        webView.removeFromSuperview()
+        webView.frame = container.bounds
+        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        container.addSubview(webView)
+    }
 }

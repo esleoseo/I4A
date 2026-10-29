@@ -98,7 +98,10 @@ extension View {
     @ViewBuilder
     func liquidGlassCapsule() -> some View {
         if #available(iOS 26.0, *) {
-            glassEffect(.regular.interactive(), in: Capsule())
+            // Not `.interactive()`: its touch tracking crashed the app
+            // (NSArray nil insert in gesture handling) when the web view
+            // underneath was touched.
+            glassEffect(.regular, in: Capsule())
         } else {
             materialCapsule()
         }
