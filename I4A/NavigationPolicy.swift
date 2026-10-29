@@ -47,6 +47,24 @@ enum NavigationPolicy {
         return false
     }
 
+    /// The code of a single Reel URL (`/reel/CODE/`, `/reels/CODE/`,
+    /// `/user/reel/CODE/`); nil for anything else, including the Reels feed.
+    static func reelCode(_ url: URL?) -> String? {
+        guard let url, isInstagramHost(url.host) else { return nil }
+        let parts = url.path.split(separator: "/").map(String.init)
+        for (index, part) in parts.enumerated() where index <= 1 {
+            let keyword = part.lowercased()
+            guard keyword == "reel" || keyword == "reels", index + 1 < parts.count else { continue }
+            let code = parts[index + 1]
+            return code.lowercased() != "audio" && isValidReelCode(code) ? code : nil
+        }
+        return nil
+    }
+
+    static func isValidReelCode(_ code: String) -> Bool {
+        (5...40).contains(code.count) && code.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") }
+    }
+
     static func decide(url: URL, isMainFrame: Bool, hideReels: Bool) -> NavigationDecision {
         let scheme = url.scheme?.lowercased() ?? ""
         switch scheme {

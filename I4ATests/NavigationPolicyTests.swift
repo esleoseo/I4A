@@ -73,4 +73,22 @@ final class NavigationPolicyTests: XCTestCase {
         XCTAssertEqual(decide("https://ig.me/m/someone"), .allow)
         XCTAssertEqual(decide("about:blank"), .allow)
     }
+
+    func testReelCode() {
+        XCTAssertEqual(NavigationPolicy.reelCode(url("https://www.instagram.com/reel/ABCdef12/")), "ABCdef12")
+        XCTAssertEqual(NavigationPolicy.reelCode(url("https://www.instagram.com/reels/ABCdef12/")), "ABCdef12")
+        XCTAssertEqual(NavigationPolicy.reelCode(url("https://www.instagram.com/someone/reel/ABC_de-1/?igsh=x")), "ABC_de-1")
+        XCTAssertNil(NavigationPolicy.reelCode(url("https://www.instagram.com/reels/")))
+        XCTAssertNil(NavigationPolicy.reelCode(url("https://www.instagram.com/reels/audio/12345/")))
+        XCTAssertNil(NavigationPolicy.reelCode(url("https://www.instagram.com/p/ABCdef12/")))
+        XCTAssertNil(NavigationPolicy.reelCode(url("https://example.com/reel/ABCdef12/")))
+        XCTAssertNil(NavigationPolicy.reelCode(nil))
+    }
+
+    func testValidReelCode() {
+        XCTAssertTrue(NavigationPolicy.isValidReelCode("ABCdef12"))
+        XCTAssertFalse(NavigationPolicy.isValidReelCode("abc"))
+        XCTAssertFalse(NavigationPolicy.isValidReelCode("abc/def12"))
+        XCTAssertFalse(NavigationPolicy.isValidReelCode("코드코드코드"))
+    }
 }

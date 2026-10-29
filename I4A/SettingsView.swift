@@ -20,6 +20,11 @@ struct SettingsView: View {
         return sorted.filter { $0 <= settings.dailyLimitMinutes }
     }
 
+    /// "@a, @b"
+    private var allowedAccounts: String {
+        settings.dmReelAllowlist.map { "@" + $0 }.joined(separator: ", ")
+    }
+
     var body: some View {
         NavigationView {
             Form {
@@ -27,10 +32,15 @@ struct SettingsView: View {
                     Toggle("릴스 숨기기", isOn: $settings.hideReels)
                         .disabled(settings.isReelsManagedByAdmin)
                 } footer: {
-                    if settings.isReelsManagedByAdmin {
-                        Label("관리자가 릴스를 숨기도록 잠갔어요. 앱에서는 바꿀 수 없어요.", systemImage: "lock.fill")
-                    } else {
-                        Text("릴스 탭, 피드의 릴스, 프로필의 릴스 탭과 릴스 게시물을 숨기고 릴스 화면으로 이동하지 못하게 막아요.")
+                    VStack(alignment: .leading, spacing: 6) {
+                        if settings.isReelsManagedByAdmin {
+                            Label("관리자가 릴스를 숨기도록 잠갔어요. 앱에서는 바꿀 수 없어요.", systemImage: "lock.fill")
+                        } else {
+                            Text("릴스 탭, 피드의 릴스, 프로필의 릴스 탭과 릴스 게시물을 숨기고 릴스 화면으로 이동하지 못하게 막아요.")
+                        }
+                        if settings.hideReels && !settings.dmReelAllowlist.isEmpty {
+                            Text("예외: 다음 계정과의 1:1 DM에서 받은 릴스는 탭할 때마다 한 편씩 볼 수 있어요. \(allowedAccounts)")
+                        }
                     }
                 }
 

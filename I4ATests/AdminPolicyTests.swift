@@ -111,4 +111,34 @@ final class AdminPolicyTests: XCTestCase {
         let locked = #"{"locked":false,"reelsLocked":true,"limitEnabled":true,"dailyLimitMinutes":30,"updatedAt":null}"#
         XCTAssertTrue(try JSONDecoder().decode(AdminPolicy.self, from: Data(locked.utf8)).reelsLocked)
     }
+
+    func testDMReelAllowlistDefaultsAndAdminUpdates() {
+        let settings = AppSettings(defaults: defaults)
+        XCTAssertEqual(settings.dmReelAllowlist, ["esleoseo", "seoleims"])
+
+        // An older server without the field leaves the list alone.
+        settings.apply(policy(locked: false, minutes: 30, at: "t1"))
+        XCTAssertEqual(settings.dmReelAllowlist, ["esleoseo", "seoleims"])
+
+        settings.apply(AdminPolicy(locked: false, limitEnabled: true, dailyLimitMinutes: 30,
+                                   updatedAt: "t2", dmReelAllowlist: ["@New.Friend", "bad name!", "new.friend"]))
+        XCTAssertEqual(settings.dmReelAllowlist, ["new.friend"])
+        XCTAssertEqual(AppSettings(defaults: defaults).dmReelAllowlist, ["new.friend"])
+
+        // An empty list from the admin means no exceptions.
+        settings.apply(AdminPolicy(locked: false, limitEnabled: true, dailyLimitMinutes: 30,
+                                   updatedAt: "t3", dmReelAllowlist: []))
+        XCTAssertEqual(settings.dmReelAllowlist, [])
+        XCTAssertEqual(AppSettings(defaults: defaults).dmReelAllowlist, [])
+    }
+
+    func testDecodesDMReelAllowlist() throws {
+        let json = #"{"locked":false,"limitEnabled":true,"dailyLimitMinutes":30,"updatedAt":null,"dmReelAllowlist":["esleoseo"]}"#
+        XCTAssertEqual(try JSONDecoder().decode(AdminPolicy.self, from: Data(json.utf8)).dmReelAllowlist, ["esleoseo"])
+    }
+
+    func testNormalizedUsernames() {
+        XCTAssertEqual(AppSettings.normalizedUsernames([" @EsLeoSeo ", "seoleims", "seoleims", "", "a b", "x".padding(toLength: 31, withPad: "x", startingAt: 0)]),
+                       ["esleoseo", "seoleims"])
+    }
 }

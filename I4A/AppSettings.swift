@@ -10,10 +10,15 @@ struct AdminPolicy: Codable, Equatable {
     var dailyLimitMinutes: Int
     /// When the admin last changed something; nil if never.
     var updatedAt: String?
+    /// Accounts whose 1:1 DMs may show the Reels they send; nil if the
+    /// server doesn't send the list (older deployments).
+    var dmReelAllowlist: [String]?
 
-    init(locked: Bool, reelsLocked: Bool = false, limitEnabled: Bool, dailyLimitMinutes: Int, updatedAt: String?) {
+    init(locked: Bool, reelsLocked: Bool = false, limitEnabled: Bool, dailyLimitMinutes: Int,
+         updatedAt: String?, dmReelAllowlist: [String]? = nil) {
         self.locked = locked
         self.reelsLocked = reelsLocked
+        self.dmReelAllowlist = dmReelAllowlist
         self.limitEnabled = limitEnabled
         self.dailyLimitMinutes = dailyLimitMinutes
         self.updatedAt = updatedAt
@@ -27,6 +32,7 @@ struct AdminPolicy: Codable, Equatable {
         limitEnabled = try c.decode(Bool.self, forKey: .limitEnabled)
         dailyLimitMinutes = try c.decode(Int.self, forKey: .dailyLimitMinutes)
         updatedAt = try c.decodeIfPresent(String.self, forKey: .updatedAt)
+        dmReelAllowlist = try c.decodeIfPresent([String].self, forKey: .dmReelAllowlist)
     }
 
     var isValid: Bool { AppSettings.allowedMinutes.contains(dailyLimitMinutes) }
@@ -37,6 +43,21 @@ final class AppSettings: ObservableObject {
     static let limitOptions = [5, 10, 15, 20, 30, 45, 60, 90, 120, 180]
     static let allowedMinutes = 1...1440
     static let defaultLimitMinutes = 30
+    static let defaultDMReelAllowlist = ["esleoseo", "seoleims"]
+    static let maxDMReelAllowlist = 20
+
+    /// Lowercased Instagram usernames without "@", invalid and duplicate ones dropped.
+    static func normalizedUsernames(_ names: [String]) -> [String] {
+        var result: [String] = []
+        for name in names {
+            var value = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if value.hasPrefix("@") { value.removeFirst() }
+            let valid = (1...30).contains(value.count) &&
+                value.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "_") }
+            if valid && !result.contains(value) { result.append(value) }
+        }
+        return Array(result.prefix(maxDMReelAllowlist))
+    }
 
     private enum Keys {
         static let hideReels = "settings.hideReels"
@@ -45,6 +66,7 @@ final class AppSettings: ObservableObject {
         static let managedByAdmin = "admin.locked"
         static let reelsManagedByAdmin = "admin.reelsLocked"
         static let lastAdminUpdate = "admin.updatedAt"
+        static let dmReelAllowlist = "admin.dmReelAllowlist"
     }
 
     private let defaults: UserDefaults
@@ -72,6 +94,12 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(isReelsManagedByAdmin, forKey: Keys.reelsManagedByAdmin) }
     }
 
+    /// Accounts whose 1:1 DMs may show the Reels they send, one per tap.
+    /// Set by the admin; defaults to `defaultDMReelAllowlist`.
+    @Published private(set) var dmReelAllowlist: [String] {
+        didSet { defaults.set(dmReelAllowlist, forKey: Keys.dmReelAllowlist) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [
@@ -85,6 +113,8 @@ final class AppSettings: ObservableObject {
         dailyLimitMinutes = Self.allowedMinutes.contains(minutes) ? minutes : Self.defaultLimitMinutes
         isManagedByAdmin = defaults.bool(forKey: Keys.managedByAdmin)
         isReelsManagedByAdmin = defaults.bool(forKey: Keys.reelsManagedByAdmin)
+        let stored = defaults.stringArray(forKey: Keys.dmReelAllowlist)
+        dmReelAllowlist = stored.map(Self.normalizedUsernames) ?? Self.defaultDMReelAllowlist
         if isReelsManagedByAdmin { hideReels = true }
     }
 
@@ -112,5 +142,9 @@ final class AppSettings: ObservableObject {
         if isManagedByAdmin != policy.locked { isManagedByAdmin = policy.locked }
         if policy.reelsLocked && !hideReels { hideReels = true }
         if isReelsManagedByAdmin != policy.reelsLocked { isReelsManagedByAdmin = policy.reelsLocked }
+        if let list = policy.dmReelAllowlist {
+            let normalized = Self.normalizedUsernames(list)
+            if normalized != dmReelAllowlist { dmReelAllowlist = normalized }
+        }
     }
 }

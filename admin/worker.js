@@ -9,9 +9,11 @@
 //   GET  /api/status   policy + latest usage (admin)
 //   PUT  /api/policy   update the policy (admin)
 //
-// Policy: { locked, reelsLocked, limitEnabled, dailyLimitMinutes, updatedAt }.
+// Policy: { locked, reelsLocked, limitEnabled, dailyLimitMinutes,
+//           dmReelAllowlist, updatedAt }.
 // `locked` locks the time limit in the app; `reelsLocked` forces Reels
-// hiding on and locks that switch.
+// hiding on and locks that switch; `dmReelAllowlist` names the accounts whose
+// 1:1 DMs may show the Reels they send, one per tap.
 //
 // Admin requests need `Authorization: Bearer <ADMIN_TOKEN>`; set the token
 // with `npx wrangler secret put ADMIN_TOKEN`.
@@ -21,6 +23,7 @@ import { DurableObject } from "cloudflare:workers";
 const DEFAULT_POLICY = {
   locked: false,
   reelsLocked: false,
+  dmReelAllowlist: ["esleoseo", "seoleims"],
   limitEnabled: true,
   dailyLimitMinutes: 30,
   updatedAt: null,
@@ -127,6 +130,11 @@ function validatePolicyChanges(body) {
     if (typeof body.reelsLocked !== "boolean") return null;
     changes.reelsLocked = body.reelsLocked;
   }
+  if ("dmReelAllowlist" in body) {
+    const list = normalizeUsernames(body.dmReelAllowlist);
+    if (!list) return null;
+    changes.dmReelAllowlist = list;
+  }
   if ("limitEnabled" in body) {
     if (typeof body.limitEnabled !== "boolean") return null;
     changes.limitEnabled = body.limitEnabled;
@@ -137,6 +145,19 @@ function validatePolicyChanges(body) {
     changes.dailyLimitMinutes = m;
   }
   return Object.keys(changes).length ? changes : null;
+}
+
+// Instagram usernames, lowercased, without "@"; null if anything is invalid.
+function normalizeUsernames(value) {
+  if (!Array.isArray(value) || value.length > 20) return null;
+  const result = [];
+  for (const item of value) {
+    if (typeof item !== "string") return null;
+    const name = item.trim().replace(/^@/, "").toLowerCase();
+    if (!/^[a-z0-9._]{1,30}$/.test(name)) return null;
+    if (!result.includes(name)) result.push(name);
+  }
+  return result;
 }
 
 function validateReport(body) {
@@ -251,6 +272,16 @@ const ADMIN_PAGE = `<!doctype html>
       </div>
     </section>
 
+    <section class="card">
+      <h2>DM 릴스 허용 계정</h2>
+      <div class="hint" style="color:var(--muted);font-size:13px;margin-bottom:10px">이 계정과의 1:1 DM에서 받은 릴스는 탭할 때마다 한 편씩 볼 수 있어요. 단체 DM과 다음 릴스로 넘기기는 계속 막혀요.</div>
+      <div class="chips" id="allowChips"></div>
+      <form id="allowForm" class="stepper">
+        <input id="allowInput" type="text" placeholder="인스타그램 아이디" autocapitalize="none" autocorrect="off" spellcheck="false" style="flex:1;width:auto;font-size:16px;font-weight:500;text-align:left;padding:0 12px">
+        <button type="submit" aria-label="추가">+</button>
+      </form>
+    </section>
+
     <section class="card" id="limitCard">
       <h2>하루 허용 시간</h2>
       <div class="chips" id="chips"></div>
@@ -330,6 +361,7 @@ const ADMIN_PAGE = `<!doctype html>
     if (document.activeElement !== $('minutes')) $('minutes').value = policy.dailyLimitMinutes;
     $('limitCard').classList.toggle('disabled', !policy.limitEnabled);
     renderChips();
+    renderAllowlist();
     $('updated').textContent = policy.updatedAt ? '마지막 변경 ' + ago(policy.updatedAt) : '';
 
     if (report) {
@@ -343,6 +375,29 @@ const ADMIN_PAGE = `<!doctype html>
       $('igBadge').textContent = report.instagramInstalled ? '⚠️' : '✅';
       $('igMeta').textContent = '마지막 확인 ' + ago(report.reportedAt);
     }
+  }
+
+  function renderAllowlist() {
+    var box = $('allowChips');
+    box.innerHTML = '';
+    var list = (policy && policy.dmReelAllowlist) || [];
+    if (!list.length) {
+      var empty = document.createElement('span');
+      empty.className = 'meta';
+      empty.textContent = '없어요. DM의 릴스도 모두 막혀요.';
+      box.appendChild(empty);
+    }
+    list.forEach(function (name) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip';
+      b.textContent = '@' + name + '  ×';
+      b.setAttribute('aria-label', '@' + name + ' 빼기');
+      b.onclick = function () {
+        save({ dmReelAllowlist: list.filter(function (n) { return n !== name; }) });
+      };
+      box.appendChild(b);
+    });
   }
 
   function renderChips() {
@@ -405,6 +460,15 @@ const ADMIN_PAGE = `<!doctype html>
   $('locked').onchange = function () { save({ locked: this.checked }); };
   $('reelsLocked').onchange = function () { save({ reelsLocked: this.checked }); };
   $('limitEnabled').onchange = function () { save({ limitEnabled: this.checked }); };
+  $('allowForm').onsubmit = function (event) {
+    event.preventDefault();
+    var name = $('allowInput').value.trim().replace(/^@/, '').toLowerCase();
+    if (!/^[a-z0-9._]{1,30}$/.test(name)) { flash('아이디를 확인해 주세요', true); return; }
+    var list = ((policy && policy.dmReelAllowlist) || []).slice();
+    if (list.indexOf(name) === -1) list.push(name);
+    $('allowInput').value = '';
+    save({ dmReelAllowlist: list });
+  };
   $('minus').onclick = function () { setMinutes((Number($('minutes').value) || 0) - 5); };
   $('plus').onclick = function () { setMinutes((Number($('minutes').value) || 0) + 5); };
   $('minutes').oninput = function () {

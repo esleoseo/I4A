@@ -86,6 +86,9 @@ struct ContentView: View {
         .onChange(of: settings.hideReels) { hide in
             web.setHideReels(hide)
         }
+        .onChange(of: settings.dmReelAllowlist) { usernames in
+            web.setDMReelAllowlist(usernames)
+        }
         .onChange(of: web.blockedReelCount) { _ in
             showReelNotice = true
             noticeToken += 1

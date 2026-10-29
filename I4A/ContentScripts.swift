@@ -17,6 +17,8 @@ enum ContentScripts {
     /// - `data-i4a-feed` on <html>: the home feed is showing.
     /// - `data-i4a-nav`: Instagram's own bottom bar, replaced by the native one.
     /// - `data-i4a-blocked`: a Reel's <video>, kept hidden and paused.
+    /// - `data-i4a-dm-allowed` on <html>: a 1:1 DM with an allowed account;
+    ///   the Reels shared there stay visible and can be opened one at a time.
     static let css = """
     html[data-i4a-reels] a[href="/reels/"],
     html[data-i4a-reels] a[href="/reels"],
@@ -24,7 +26,7 @@ enum ContentScripts {
     html[data-i4a-reels] a[href^="/reels?"],
     html[data-i4a-reels] a[href*="instagram.com/reels"],
     html[data-i4a-reels] a[href$="/reels/"]:not([href*="/explore/"]),
-    html[data-i4a-reels] a[href*="/reel/"]:not([href*="/explore/"]),
+    html[data-i4a-reels]:not([data-i4a-dm-allowed]) a[href*="/reel/"]:not([href*="/explore/"]),
     html[data-i4a-reels] div:has(> a[href="/reels/"]:only-child),
     html[data-i4a-reels] li:has(> a[href="/reels/"]:only-child),
     html[data-i4a-reels][data-i4a-feed] article:has(a[href*="/reel/"]:not([href*="/explore/"])),
@@ -36,17 +38,38 @@ enum ContentScripts {
     }
     """
 
-    static func userScript(hideReels: Bool) -> WKUserScript {
+    /// What the page script needs to know from the app.
+    struct PageConfig: Equatable {
+        var hideReels: Bool
+        /// Usernames whose 1:1 DMs may show the Reels they send, one per tap.
+        var dmReelAllowlist: [String]
+        /// The user's own profile path ("/name/"), to tell them apart from
+        /// the other person in a DM.
+        var ownProfile: String?
+
+        var json: String {
+            let object: [String: Any] = [
+                "hide": hideReels,
+                "allow": dmReelAllowlist,
+                "me": ownProfile.map { $0 as Any } ?? NSNull(),
+            ]
+            guard let data = try? JSONSerialization.data(withJSONObject: object),
+                  let json = String(data: data, encoding: .utf8) else { return "{}" }
+            return json
+        }
+    }
+
+    static func userScript(_ config: PageConfig) -> WKUserScript {
         WKUserScript(
-            source: bootstrapJS(hideReels: hideReels),
+            source: bootstrapJS(config),
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true,
             in: world
         )
     }
 
-    static func setHideReelsJS(_ hide: Bool) -> String {
-        "window.__i4a && window.__i4a.setHideReels(\(hide)); true;"
+    static func configureJS(_ config: PageConfig) -> String {
+        "window.__i4a && window.__i4a.configure(\(config.json)); true;"
     }
 
     /// Re-applies everything and reports the page state; called on every URL change.
@@ -59,12 +82,15 @@ enum ContentScripts {
 
     static let scrollToTopJS = "window.scrollTo({ top: 0, behavior: 'smooth' }); true;"
 
-    static func bootstrapJS(hideReels: Bool) -> String {
+    static func bootstrapJS(_ config: PageConfig) -> String {
         """
         (function () {
           'use strict';
-          var hide = \(hideReels);
-          if (window.__i4a) { window.__i4a.setHideReels(hide); return; }
+          var config = \(config.json);
+          if (window.__i4a) { window.__i4a.configure(config); return; }
+          var hide = !!config.hide;
+          var allow = config.allow || [];
+          var me = config.me || null;
 
           var STYLE_ID = 'i4a-style';
           var CSS = \(jsStringLiteral(css));
@@ -94,6 +120,7 @@ enum ContentScripts {
             setFlag('data-i4a-reels', hide);
             // Feed rules only apply on the home feed; post pages also use <article>.
             setFlag('data-i4a-feed', location.pathname === '/');
+            setFlag('data-i4a-dm-allowed', inAllowedThread());
             return true;
           }
 
@@ -177,11 +204,76 @@ enum ContentScripts {
           //    post page is hidden, muted and paused, again whenever it
           //    resumes. Only the <video> is hidden, never its container, so
           //    the conversation itself can't disappear.
+          // Exception: in a 1:1 DM with an allowed account, a tap lets exactly
+          // one Reel play. Moving on to another Reel is blocked again.
           var lastNotice = 0;
+          var tapAt = 0;
+          var grant = null;
+          var grantedCode = null;
+          var TAP_WINDOW = 8000;
+          // True while this script clicks something itself, so those clicks
+          // never count as the user's tap.
+          var selfClick = false;
+
+          function clickAs(el) {
+            selfClick = true;
+            try { el.click(); } finally { selfClick = false; }
+          }
 
           function notice() {
             var now = Date.now();
             if (now - lastNotice > 4000) { lastNotice = now; post({ blockedReel: true }); }
+          }
+
+          // The other person of a 1:1 thread: the single profile linked from
+          // the thread header. Group threads link no single profile, so they
+          // (and anything unrecognised) are never allowed.
+          function threadPartner() {
+            if (!/^\\/direct\\/t\\//.test(location.pathname)) { return null; }
+            var names = {};
+            var count = 0;
+            var links = document.querySelectorAll('a[href]');
+            for (var i = 0; i < links.length; i++) {
+              var href = links[i].getAttribute('href');
+              var match = /^\\/([A-Za-z0-9._]+)\\/?$/.exec(href);
+              if (!match || RESERVED.test(href + '/')) { continue; }
+              var name = match[1].toLowerCase();
+              if (me && me.toLowerCase() === '/' + name + '/') { continue; }
+              var rect = links[i].getBoundingClientRect();
+              if (rect.height === 0 || rect.top > 140) { continue; }
+              if (!names[name]) { names[name] = true; count++; }
+            }
+            if (count !== 1) { return null; }
+            for (var key in names) { return key; }
+            return null;
+          }
+
+          function inAllowedThread() {
+            if (!hide || !allow.length) { return false; }
+            var partner = threadPartner();
+            return !!partner && allow.indexOf(partner) !== -1;
+          }
+
+          function srcOf(video) { return video.currentSrc || video.src || ''; }
+
+          // A Reel may play only right after a tap in an allowed thread, and
+          // only while it stays the same video and source.
+          function isGranted(video) {
+            if (tapAt && Date.now() - tapAt < TAP_WINDOW && inAllowedThread()) {
+              tapAt = 0;
+              grant = { video: video, src: srcOf(video) };
+              video.removeAttribute('data-i4a-blocked');
+              return true;
+            }
+            // The tapped Reel opened as its own page (/reel/CODE/, /p/CODE/).
+            if (grantedCode && location.pathname.indexOf('/' + grantedCode + '/') !== -1) { return true; }
+            return !!grant && grant.video === video && grant.src === srcOf(video) &&
+              location.pathname.indexOf('/direct/') === 0;
+          }
+
+          function reelCode(href) {
+            var match = /\\/reels?\\/([A-Za-z0-9_-]+)/.exec(href || '');
+            return match && match[1] !== 'audio' ? match[1] : null;
           }
 
           function isReelPlayer(video) {
@@ -207,7 +299,7 @@ enum ContentScripts {
             var labels = dialog.querySelectorAll('[aria-label]');
             for (var i = 0; i < labels.length; i++) {
               if (/^(close|닫기)$/i.test((labels[i].getAttribute('aria-label') || '').trim())) {
-                (labels[i].closest('button, [role="button"], a') || labels[i]).click();
+                clickAs(labels[i].closest('button, [role="button"], a') || labels[i]);
                 return;
               }
             }
@@ -228,14 +320,27 @@ enum ContentScripts {
           function onMedia(event) {
             var video = event.target;
             if (!video || video.tagName !== 'VIDEO' || video.paused) { return; }
-            if ((hide && video.hasAttribute('data-i4a-blocked')) || isReelPlayer(video)) { stopReel(video); }
+            var reel = (hide && video.hasAttribute('data-i4a-blocked')) || isReelPlayer(video);
+            if (reel && !isGranted(video)) { stopReel(video); }
           }
           document.addEventListener('playing', onMedia, true);
           document.addEventListener('timeupdate', onMedia, true);
 
           document.addEventListener('click', function (event) {
-            if (!hide || location.pathname.indexOf('/direct/') !== 0 || !event.target.closest) { return; }
-            if (event.target.closest('a[href*="/reel/"], a[href*="/reels/"]')) {
+            if (selfClick || !hide || location.pathname.indexOf('/direct/') !== 0 || !event.target.closest) { return; }
+            var link = event.target.closest('a[href*="/reel/"], a[href*="/reels/"]');
+            if (inAllowedThread()) {
+              // Opens one Reel: the overlay player, or a Reel page the app
+              // lets through for this code only.
+              tapAt = Date.now();
+              var code = link && reelCode(link.getAttribute('href'));
+              if (code) {
+                grantedCode = code;
+                post({ grantReel: code });
+              }
+              return;
+            }
+            if (link) {
               event.preventDefault();
               event.stopPropagation();
               notice();
@@ -248,6 +353,11 @@ enum ContentScripts {
             var blocked = document.querySelectorAll('video[data-i4a-blocked]');
             for (var i = 0; i < blocked.length; i++) {
               if (!isReelPlayer(blocked[i])) { blocked[i].removeAttribute('data-i4a-blocked'); }
+            }
+            var inDirect = location.pathname.indexOf('/direct/') === 0;
+            if (grant && (!grant.video.isConnected || !inDirect)) { grant = null; }
+            if (grantedCode && !inDirect && location.pathname.indexOf('/' + grantedCode + '/') === -1) {
+              grantedCode = null;
             }
           }
 
@@ -295,13 +405,18 @@ enum ContentScripts {
 
           window.__i4a = {
             refresh: refresh,
-            setHideReels: function (value) { hide = !!value; refresh(); },
+            configure: function (value) {
+              hide = !!value.hide;
+              allow = value.allow || [];
+              me = value.me || null;
+              refresh();
+            },
             tap: function (kind) {
               findNav();
               collectNavItems();
               var el = items[kind];
               if (!el || !el.isConnected) { return false; }
-              el.click();
+              clickAs(el);
               return true;
             }
           };

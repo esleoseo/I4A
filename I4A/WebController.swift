@@ -28,20 +28,40 @@ final class WebController: NSObject, ObservableObject {
     private var pageHasOverlay = false
     private static let profilePathKey = "web.profilePath"
     private var profilePath: String? = UserDefaults.standard.string(forKey: WebController.profilePathKey) {
-        didSet { UserDefaults.standard.set(profilePath, forKey: Self.profilePathKey) }
+        didSet {
+            UserDefaults.standard.set(profilePath, forKey: Self.profilePathKey)
+            var config = pageConfig
+            config.ownProfile = profilePath
+            setPageConfig(config)
+        }
     }
-    private var hideReels: Bool
+    private var pageConfig: ContentScripts.PageConfig
+    private var hideReels: Bool { pageConfig.hideReels }
+
+    /// A Reel the page let the user open from an allowed DM. Its page may load
+    /// once within a short window; staying on it stays allowed.
+    private struct ReelGrant {
+        let code: String
+        let at: Date
+        var entered = false
+    }
+    private var reelGrant: ReelGrant?
+    private static let reelGrantWindow: TimeInterval = 15
     private var isSuspended = false
     private var needsReload = false
     private var bounceScheduled = false
     private var failedURL: URL?
     private var lastTermination: Date?
 
-    init(hideReels: Bool) {
-        self.hideReels = hideReels
+    init(hideReels: Bool, dmReelAllowlist: [String]) {
+        pageConfig = ContentScripts.PageConfig(
+            hideReels: hideReels,
+            dmReelAllowlist: dmReelAllowlist,
+            ownProfile: UserDefaults.standard.string(forKey: Self.profilePathKey)
+        )
 
         let contentController = WKUserContentController()
-        contentController.addUserScript(ContentScripts.userScript(hideReels: hideReels))
+        contentController.addUserScript(ContentScripts.userScript(pageConfig))
         userContentController = contentController
         let messageProxy = MessageProxy()
         contentController.add(messageProxy, contentWorld: ContentScripts.world, name: ContentScripts.messageHandlerName)
@@ -98,11 +118,25 @@ final class WebController: NSObject, ObservableObject {
     // MARK: - Commands
 
     func setHideReels(_ hide: Bool) {
-        guard hide != hideReels else { return }
-        hideReels = hide
+        var config = pageConfig
+        config.hideReels = hide
+        setPageConfig(config)
+    }
+
+    func setDMReelAllowlist(_ usernames: [String]) {
+        var config = pageConfig
+        config.dmReelAllowlist = usernames
+        setPageConfig(config)
+    }
+
+    private func setPageConfig(_ config: ContentScripts.PageConfig) {
+        guard config != pageConfig else { return }
+        pageConfig = config
+        // Pages loaded from now on get the new values from the start…
         userContentController.removeAllUserScripts()
-        userContentController.addUserScript(ContentScripts.userScript(hideReels: hide))
-        evaluate(ContentScripts.setHideReelsJS(hide))
+        userContentController.addUserScript(ContentScripts.userScript(config))
+        // …and the current page right away.
+        evaluate(ContentScripts.configureJS(config))
         urlDidChange(webView.url)
     }
 
@@ -191,8 +225,23 @@ final class WebController: NSObject, ObservableObject {
         evaluate(ContentScripts.refreshJS)
         updatePageState()
         setBarCollapsed(false)
-        guard hideReels, NavigationPolicy.isReels(url) else { return }
+        if var grant = reelGrant {
+            if NavigationPolicy.reelCode(url) == grant.code {
+                grant.entered = true
+                reelGrant = grant
+            } else if grant.entered || Date().timeIntervalSince(grant.at) > Self.reelGrantWindow {
+                // Left the granted Reel (or never went): it's used up.
+                reelGrant = nil
+            }
+        }
+        guard hideReels, NavigationPolicy.isReels(url), !isGranted(url) else { return }
         leaveReels()
+    }
+
+    /// The Reel page `url` is the one granted from an allowed DM.
+    private func isGranted(_ url: URL?) -> Bool {
+        guard let grant = reelGrant, let code = NavigationPolicy.reelCode(url), code == grant.code else { return false }
+        return grant.entered || Date().timeIntervalSince(grant.at) <= Self.reelGrantWindow
     }
 
     private func updatePageState() {
@@ -207,6 +256,11 @@ final class WebController: NSObject, ObservableObject {
         guard let message = body as? [String: Any] else { return }
         if message["blockedReel"] as? Bool == true {
             blockedReelCount += 1
+            return
+        }
+        if let code = message["grantReel"] as? String {
+            // Only sent from a 1:1 DM with an allowed account.
+            if NavigationPolicy.isValidReelCode(code) { reelGrant = ReelGrant(code: code, at: Date()) }
             return
         }
         if let path = message["profile"] as? String, path.hasPrefix("/"), path != profilePath {
@@ -247,17 +301,19 @@ final class WebController: NSObject, ObservableObject {
         if collapsed != isBarCollapsed { isBarCollapsed = collapsed }
     }
 
-    /// Steps back from a Reels page, or goes home if there's nowhere to go back to.
+    /// Steps back past Reels pages, or goes home if there's nowhere to go back to.
     private func leaveReels() {
         guard !bounceScheduled else { return }
         bounceScheduled = true
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.bounceScheduled = false
-            guard self.hideReels, NavigationPolicy.isReels(self.webView.url) else { return }
-            if let back = self.webView.backForwardList.backItem,
-               !NavigationPolicy.isReels(back.url) {
-                self.webView.goBack()
+            guard self.hideReels, NavigationPolicy.isReels(self.webView.url),
+                  !self.isGranted(self.webView.url) else { return }
+            // The nearest earlier page that isn't a Reel, e.g. the DM a granted
+            // Reel was opened from when the user swipes on to the next one.
+            if let back = self.webView.backForwardList.backList.last(where: { !NavigationPolicy.isReels($0.url) }) {
+                self.webView.go(to: back)
             } else {
                 self.webView.load(URLRequest(url: NavigationPolicy.homeURL))
             }
@@ -317,6 +373,8 @@ extension WebController: WKNavigationDelegate {
                 webView.load(navigationAction.request)
                 return
             }
+            decisionHandler(.allow)
+        case .blockReels where isGranted(url):
             decisionHandler(.allow)
         case .blockReels:
             decisionHandler(.cancel)
