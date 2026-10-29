@@ -21,9 +21,6 @@ final class WebController: NSObject, ObservableObject {
     private let userContentController: WKUserContentController
     private let refreshControl = UIRefreshControl()
     private var urlObservation: NSKeyValueObservation?
-    private var scrollObservation: NSKeyValueObservation?
-    private var lastScrollY: CGFloat = 0
-    private var scrollTravel: CGFloat = 0
     private var pageHasLoginForm = false
     private var pageHasOverlay = false
     /// Items of Instagram's own bar on the current page; nil when it has none.
@@ -93,6 +90,11 @@ final class WebController: NSObject, ObservableObject {
 
         refreshControl.addTarget(self, action: #selector(pullToRefresh), for: .valueChanged)
         webView.scrollView.refreshControl = refreshControl
+        // The scroll view's "delay touches until it's clear it's not a scroll"
+        // recognizer crashed the app on touch (NSArray nil insert in
+        // -[UIGestureRecognizer _delayTouchesForEvent:inPhase:]). The page
+        // tells taps from scrolls itself, so pass touches on right away.
+        webView.scrollView.delaysContentTouches = false
 
         // Instagram is a single-page app: moving between pages uses
         // history.pushState, which never reaches the navigation delegate.
@@ -100,16 +102,12 @@ final class WebController: NSObject, ObservableObject {
         urlObservation = webView.observe(\.url, options: [.new]) { [weak self] webView, _ in
             DispatchQueue.main.async { self?.urlDidChange(webView.url) }
         }
-        scrollObservation = webView.scrollView.observe(\.contentOffset, options: [.new]) { [weak self] scrollView, _ in
-            self?.scrollDidChange(scrollView)
-        }
 
         webView.load(URLRequest(url: NavigationPolicy.homeURL))
     }
 
     deinit {
         urlObservation?.invalidate()
-        scrollObservation?.invalidate()
         userContentController.removeScriptMessageHandler(
             forName: ContentScripts.messageHandlerName, contentWorld: ContentScripts.world)
     }
@@ -257,6 +255,11 @@ final class WebController: NSObject, ObservableObject {
             blockedReelCount += 1
             return
         }
+        if let collapsed = message["barCollapsed"] as? Bool {
+            // Scroll direction, reported by the page (see ContentScripts).
+            setBarCollapsed(collapsed)
+            return
+        }
         if let code = message["grantReel"] as? String {
             // Sent when the user taps a Reel in a DM conversation.
             if NavigationPolicy.isValidReelCode(code) { reelGrant = ReelGrant(code: code, at: Date()) }
@@ -274,27 +277,6 @@ final class WebController: NSObject, ObservableObject {
         pageHasOverlay = message["overlay"] as? Bool ?? false
         pageShowsInstagramNav = message["navShown"] as? Bool ?? false
         updatePageState()
-    }
-
-    /// Shrinks the bar after a deliberate scroll down, restores it on any
-    /// scroll up or near the top, like Instagram's app.
-    private func scrollDidChange(_ scrollView: UIScrollView) {
-        let y = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
-        let delta = y - lastScrollY
-        lastScrollY = y
-        guard scrollView.isTracking || scrollView.isDragging || scrollView.isDecelerating else { return }
-        if y < 40 {
-            scrollTravel = 0
-            setBarCollapsed(false)
-            return
-        }
-        if (delta > 0) != (scrollTravel > 0) { scrollTravel = 0 }
-        scrollTravel += delta
-        if scrollTravel > 30 {
-            setBarCollapsed(true)
-        } else if scrollTravel < -20 {
-            setBarCollapsed(false)
-        }
     }
 
     private func setBarCollapsed(_ collapsed: Bool) {

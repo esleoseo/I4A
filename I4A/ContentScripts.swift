@@ -471,8 +471,48 @@ enum ContentScripts {
             return item;
           }
 
+          // The native bar shrinks after a deliberate scroll down and grows
+          // back on any scroll up or near the top, like Instagram's app. The
+          // page tracks this itself, so the app needn't observe the web
+          // view's scroll view.
+          var lastScrollY = 0;
+          var scrollTravel = 0;
+          var barCollapsed = false;
+          var scrollPath = location.pathname;
+
+          function setBarCollapsed(value) {
+            if (value === barCollapsed) { return; }
+            barCollapsed = value;
+            post({ barCollapsed: value });
+          }
+
+          window.addEventListener('scroll', function () {
+            var y = window.scrollY || 0;
+            var delta = y - lastScrollY;
+            lastScrollY = y;
+            if (y < 40) {
+              scrollTravel = 0;
+              setBarCollapsed(false);
+              return;
+            }
+            if ((delta > 0) !== (scrollTravel > 0)) { scrollTravel = 0; }
+            scrollTravel += delta;
+            if (scrollTravel > 30) { setBarCollapsed(true); }
+            else if (scrollTravel < -20) { setBarCollapsed(false); }
+          }, { passive: true });
+
+          // A new page starts with the bar shown (the app resets it too).
+          function resetScrollOnNewPage() {
+            if (location.pathname === scrollPath) { return; }
+            scrollPath = location.pathname;
+            lastScrollY = window.scrollY || 0;
+            scrollTravel = 0;
+            barCollapsed = false;
+          }
+
           function refresh() {
             if (!ensureStyle()) { return; }
+            resetScrollOnNewPage();
             updateShownNav();
             findNav();
             guardBlankPage();
