@@ -1,0 +1,59 @@
+# I4A — Instagram for ADHDs
+
+인스타그램을 **릴스 없이**, **하루 정해진 시간만큼만** 쓰게 해 주는 가벼운 아이폰 앱입니다.
+Social Lite처럼 인스타그램 모바일 웹(instagram.com)을 앱 안에서 열고, 그 위에 두 가지 기능을 얹었습니다.
+
+| 기능 | 설명 |
+| --- | --- |
+| 릴스 숨기기 | 하단 릴스 탭, 피드 속 릴스 게시물, 프로필의 릴스 탭, 탐색·그리드의 릴스 타일을 숨기고, 릴스 화면(`/reels/`, `/reel/…`)으로 이동하면 바로 이전 화면으로 되돌립니다. |
+| 하루 시간 제한 | 5분~3시간 중 하루 허용 시간을 고르면, 앱이 화면에 켜져 있는 동안만 시간이 흐릅니다. 다 쓰면 화면이 잠기고 영상이 멈추며, 자정에 초기화됩니다. 제한에 도달한 날에는 제한을 늘리거나 끌 수 없습니다. |
+
+## 설계
+
+가볍고 안정적인 것을 최우선으로, 외부 라이브러리 없이 SwiftUI + WKWebView만 씁니다.
+
+- **왜 웹 래퍼인가**: 진짜 인스타그램 앱을 제한하려면 Screen Time API(FamilyControls)가 필요한데, 애플의 별도 승인(entitlement)이 필요하고 릴스만 골라 숨길 수도 없습니다. 웹 래퍼는 둘 다 가능합니다.
+- **릴스 숨기기는 3중 방어**
+  1. **CSS**: 문서 시작 시점에 스타일을 주입합니다. `a[href*="/reel/"]`, `article:has(...)`처럼 링크 주소 기반 셀렉터만 쓰고, 자주 바뀌는 인스타그램 클래스명에는 의존하지 않습니다. `:has()`는 인스타그램이 화면을 다시 그려도 계속 적용되므로 DOM 폴링이 필요 없습니다. 스크립트는 격리된 content world에서 실행되어 페이지 스크립트가 건드릴 수 없습니다.
+  2. **내비게이션 정책**: 전체 페이지 이동 중 릴스 URL은 네이티브에서 취소합니다.
+  3. **URL 감시(KVO)**: 인스타그램은 SPA라 `history.pushState`로 이동하므로, `WKWebView.url` 변화를 감시해 릴스로 가면 즉시 되돌립니다.
+- **시간 측정**: 단조 시계(`systemUptime`)로 1초 단위로 누적하고, 날짜 판정에만 벽시계를 씁니다. 백그라운드·설정 화면·잠금 상태에서는 세지 않고, 5초마다(및 백그라운드 진입 시) 저장해 앱이 강제 종료돼도 기록이 거의 남습니다.
+- **안정성**: 웹 프로세스가 죽으면 자동 새로고침, 네트워크 오류 시 재시도 화면, 외부 링크는 Safari로, `instagram://`·앱스토어 리다이렉트는 차단(진짜 앱으로 튕기지 않도록), 다른 도메인에서 instagram.com 링크를 탭해도 유니버설 링크로 앱이 열리지 않게 처리, PiP 비활성화(제한 후 영상이 떠다니지 않도록), JS alert/confirm 지원, 당겨서 새로고침.
+
+```
+I4A/
+├─ I4AApp.swift          앱 진입점, 객체 생성
+├─ ContentView.swift     상단 바(남은 시간·설정) + 웹뷰 + 잠금/오류 화면
+├─ WebController.swift   WKWebView 소유, 내비게이션·UI 델리게이트
+├─ ContentScripts.swift  릴스 숨김 CSS/JS
+├─ NavigationPolicy.swift URL 판정(릴스·허용 도메인) — 순수 로직
+├─ UsageTracker.swift    하루 사용 시간 측정·저장
+├─ AppSettings.swift     설정(UserDefaults)
+├─ SettingsView.swift    설정 화면
+└─ LimitReachedView.swift 시간 초과 화면
+I4ATests/                단위 테스트 (URL 판정, 시간 측정, 설정)
+```
+
+## 설치 (내 아이폰에 직접)
+
+1. Mac에서 Xcode(15 이상)로 `I4A.xcodeproj`를 엽니다.
+2. `I4A` 타깃 → **Signing & Capabilities**에서 Team을 내 Apple ID로 고르고, 필요하면 Bundle Identifier(`com.esleoseo.i4a`)를 고유한 값으로 바꿉니다.
+3. 아이폰을 연결하고 실행(⌘R)합니다. 처음엔 아이폰 **설정 → 일반 → VPN 및 기기 관리**에서 개발자를 신뢰해 주세요.
+4. 무료 Apple ID는 7일마다 다시 설치해야 합니다(유료 개발자 계정은 1년).
+
+> 팁: 효과를 보려면 원래 인스타그램 앱은 지우거나 스크린타임으로 막아 두세요.
+
+## 테스트
+
+```bash
+xcodebuild test -project I4A.xcodeproj -scheme I4A -destination 'platform=iOS Simulator,name=iPhone 16' CODE_SIGNING_ALLOWED=NO
+```
+
+GitHub Actions(`.github/workflows/ci.yml`)가 푸시마다 시뮬레이터 테스트와 기기용 Release 빌드를 돌립니다.
+
+## 알려진 한계
+
+- 인스타그램 웹 구조가 바뀌면 일부 릴스 요소가 잠깐 보일 수 있습니다. 그래도 릴스 화면으로의 이동 차단(2·3번 방어)은 URL 기반이라 계속 동작합니다.
+- DM으로 받은 릴스도 숨겨집니다(릴스 링크 전체를 숨기기 때문).
+- 기기 날짜를 바꾸면 하루 사용량이 초기화될 수 있습니다.
+- 인스타그램/메타와 무관한 개인용 앱입니다. 앱스토어 배포는 심사 가이드라인 5.2.2(제3자 서비스) 때문에 거절될 수 있습니다.
