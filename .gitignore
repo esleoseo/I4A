@@ -9,3 +9,6 @@ build/
 I4A/Config/Local.xcconfig
 I4A/Config/build-history.txt
 I4A.xcodeproj/project.xcworkspace/
+admin/.dev.vars
+admin/.wrangler/
+admin/node_modules/
