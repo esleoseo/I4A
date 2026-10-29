@@ -16,7 +16,7 @@ enum ContentScripts {
     /// - `data-i4a-reels` on <html>: Reels hiding is on.
     /// - `data-i4a-feed` on <html>: the home feed is showing.
     /// - `data-i4a-nav`: Instagram's own bottom bar, replaced by the native one.
-    /// - `data-i4a-blocked`: a Reels viewer that couldn't be closed.
+    /// - `data-i4a-blocked`: a Reel's <video>, kept hidden and paused.
     static let css = """
     html[data-i4a-reels] a[href="/reels/"],
     html[data-i4a-reels] a[href="/reels"],
@@ -28,9 +28,11 @@ enum ContentScripts {
     html[data-i4a-reels] div:has(> a[href="/reels/"]:only-child),
     html[data-i4a-reels] li:has(> a[href="/reels/"]:only-child),
     html[data-i4a-reels][data-i4a-feed] article:has(a[href*="/reel/"]:not([href*="/explore/"])),
-    [data-i4a-nav],
-    [data-i4a-blocked] {
+    [data-i4a-nav] {
         display: none !important;
+    }
+    html[data-i4a-reels] video[data-i4a-blocked] {
+        visibility: hidden !important;
     }
     """
 
@@ -169,55 +171,95 @@ enum ContentScripts {
           }
 
           // A Reel shared in a DM plays in an overlay while the URL stays on
-          // /direct/, so URL-based blocking never sees it. Catch any large
-          // video there instead, stop it and close the overlay.
-          function isBigVideo(video) {
+          // /direct/, so URL-based blocking never sees it.
+          // 1) Taps on Reel links there are cancelled before Instagram sees them.
+          // 2) Backstop: a large video playing in a DM, a dialog, or on a Reel
+          //    post page is hidden, muted and paused, again whenever it
+          //    resumes. Only the <video> is hidden, never its container, so
+          //    the conversation itself can't disappear.
+          var lastNotice = 0;
+
+          function notice() {
+            var now = Date.now();
+            if (now - lastNotice > 4000) { lastNotice = now; post({ blockedReel: true }); }
+          }
+
+          function isReelPlayer(video) {
+            if (!hide) { return false; }
+            var path = location.pathname;
+            if (path.indexOf('/stories/') === 0) { return false; }
+            var inContext = path.indexOf('/direct/') === 0 ||
+              !!video.closest('[role="dialog"], [aria-modal="true"]');
+            if (!inContext && /^\/p\//.test(path)) {
+              var link = document.querySelector('link[rel="canonical"], meta[property="og:url"]');
+              var url = link ? (link.getAttribute('href') || link.getAttribute('content') || '') : '';
+              inContext = url.indexOf('/reel/') !== -1;
+            }
+            if (!inContext) { return false; }
+            // Full-width players only; inline video messages are smaller.
             var rect = video.getBoundingClientRect();
-            return rect.width >= window.innerWidth * 0.6 && rect.height >= window.innerHeight * 0.4;
+            return rect.width >= window.innerWidth * 0.85 && rect.height >= window.innerHeight * 0.5;
           }
 
-          function closeViewer(video) {
-            try { video.pause(); video.muted = true; } catch (e) {}
-            if (video.hasAttribute('data-i4a-handled')) { return false; }
-            video.setAttribute('data-i4a-handled', '');
-            var container = video.closest('[role="dialog"]');
-            if (!container) {
-              for (var el = video.parentElement; el && el !== document.body; el = el.parentElement) {
-                if (getComputedStyle(el).position === 'fixed') { container = el; break; }
-              }
-            }
-            if (!container) { return true; }
-            var labels = container.querySelectorAll('[aria-label]');
+          function closeDialog(video) {
+            var dialog = video.closest('[role="dialog"], [aria-modal="true"]');
+            if (!dialog) { return; }
+            var labels = dialog.querySelectorAll('[aria-label]');
             for (var i = 0; i < labels.length; i++) {
-              if (/^(close|닫기)$/i.test(labels[i].getAttribute('aria-label').trim())) {
+              if (/^(close|닫기)$/i.test((labels[i].getAttribute('aria-label') || '').trim())) {
                 (labels[i].closest('button, [role="button"], a') || labels[i]).click();
-                break;
+                return;
               }
             }
-            // If closing didn't take it away, hide it.
-            setTimeout(function () {
-              if (container.isConnected) { container.setAttribute('data-i4a-blocked', ''); }
-            }, 300);
-            return true;
           }
 
-          function blockDirectReels() {
-            if (!hide || location.pathname.indexOf('/direct/') !== 0) { return false; }
-            var videos = document.querySelectorAll('video');
-            for (var i = 0; i < videos.length; i++) {
-              if (isBigVideo(videos[i]) && closeViewer(videos[i])) { return true; }
+          function stopReel(video) {
+            var first = !video.hasAttribute('data-i4a-blocked');
+            video.setAttribute('data-i4a-blocked', '');
+            // Pausing inside Instagram's own play() call makes its player
+            // show an error; let that call finish first.
+            setTimeout(function () {
+              try { video.muted = true; video.pause(); } catch (e) {}
+            }, 0);
+            if (first) { closeDialog(video); }
+            notice();
+          }
+
+          function onMedia(event) {
+            var video = event.target;
+            if (!video || video.tagName !== 'VIDEO' || video.paused) { return; }
+            if ((hide && video.hasAttribute('data-i4a-blocked')) || isReelPlayer(video)) { stopReel(video); }
+          }
+          document.addEventListener('playing', onMedia, true);
+          document.addEventListener('timeupdate', onMedia, true);
+
+          document.addEventListener('click', function (event) {
+            if (!hide || location.pathname.indexOf('/direct/') !== 0 || !event.target.closest) { return; }
+            if (event.target.closest('a[href*="/reel/"], a[href*="/reels/"]')) {
+              event.preventDefault();
+              event.stopPropagation();
+              notice();
+            }
+          }, true);
+
+          // Lets videos go again once they're no longer a Reel player (Reels
+          // switched off, or the element reused for something else).
+          function releaseVideos() {
+            var blocked = document.querySelectorAll('video[data-i4a-blocked]');
+            for (var i = 0; i < blocked.length; i++) {
+              if (!isReelPlayer(blocked[i])) { blocked[i].removeAttribute('data-i4a-blocked'); }
+            }
+          }
+
+          function hasOverlay() {
+            var dialogs = document.querySelectorAll('[role="dialog"], [aria-modal="true"]');
+            for (var i = 0; i < dialogs.length; i++) {
+              if (nav && nav.contains(dialogs[i])) { continue; }
+              var rect = dialogs[i].getBoundingClientRect();
+              if (rect.width > 0 && rect.height > 0 && getComputedStyle(dialogs[i]).visibility !== 'hidden') { return true; }
             }
             return false;
           }
-
-          document.addEventListener('play', function (event) {
-            var video = event.target;
-            if (hide && video && video.tagName === 'VIDEO' &&
-                location.pathname.indexOf('/direct/') === 0 && isBigVideo(video) &&
-                closeViewer(video)) {
-              post({ blockedReel: true });
-            }
-          }, true);
 
           function post(message) {
             try { window.webkit.messageHandlers.\(messageHandlerName).postMessage(message); } catch (e) {}
@@ -227,6 +269,8 @@ enum ContentScripts {
             var state = collectNavItems();
             state.nav = !!nav;
             state.login = !!document.querySelector('input[type="password"]');
+            // Instagram's sheets and viewers sit where the native bar is.
+            state.overlay = hasOverlay();
             var serialized = JSON.stringify(state);
             if (serialized !== lastReport) {
               lastReport = serialized;
@@ -238,7 +282,7 @@ enum ContentScripts {
             if (!ensureStyle()) { return; }
             findNav();
             improveLogin();
-            if (blockDirectReels()) { post({ blockedReel: true }); }
+            releaseVideos();
             report();
           }
 

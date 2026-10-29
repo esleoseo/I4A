@@ -25,6 +25,7 @@ final class WebController: NSObject, ObservableObject {
     private var lastScrollY: CGFloat = 0
     private var scrollTravel: CGFloat = 0
     private var pageHasLoginForm = false
+    private var pageHasOverlay = false
     private static let profilePathKey = "web.profilePath"
     private var profilePath: String? = UserDefaults.standard.string(forKey: WebController.profilePathKey) {
         didSet { UserDefaults.standard.set(profilePath, forKey: Self.profilePathKey) }
@@ -198,7 +199,7 @@ final class WebController: NSObject, ObservableObject {
         let path = webView.url.flatMap { NavigationPolicy.isInstagramHost($0.host) ? $0.path : nil } ?? ""
         let active = WebTab.active(forPath: path, profilePath: profilePath)
         if active != activeTab { activeTab = active }
-        let hides = path.isEmpty || pageHasLoginForm || WebTab.hidesBar(onPath: path)
+        let hides = path.isEmpty || pageHasLoginForm || pageHasOverlay || WebTab.hidesBar(onPath: path)
         if hides != pageHidesBar { pageHidesBar = hides }
     }
 
@@ -217,6 +218,7 @@ final class WebController: NSObject, ObservableObject {
         let newTabs = hasNav ? order : []
         if newTabs != tabs { tabs = newTabs }
         pageHasLoginForm = message["login"] as? Bool ?? false
+        pageHasOverlay = message["overlay"] as? Bool ?? false
         updatePageState()
     }
 
