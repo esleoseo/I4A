@@ -18,7 +18,6 @@ final class WebController: NSObject, ObservableObject {
 
     /// Created only once it can go straight into a window; see `attach(to:)`.
     private var webView: WKWebView?
-    private var refreshControl: UIRefreshControl?
 
     private let configuration: WKWebViewConfiguration
     private let userContentController: WKUserContentController
@@ -111,15 +110,14 @@ final class WebController: NSObject, ObservableObject {
         if #available(iOS 16.4, *) { webView.isInspectable = true }
         #endif
 
-        let refreshControl = UIRefreshControl()
-        refreshControl.addTarget(self, action: #selector(pullToRefresh), for: .valueChanged)
-        webView.scrollView.refreshControl = refreshControl
+        // No pull-to-refresh: it shifts the whole page down, which tears
+        // Instagram's fixed header away from the content. Refresh is tapping
+        // Home again at the top of the feed, as in Instagram's app.
         // The view runs under the home indicator. Left to adjust for it, the
         // scroll view treats that strip as covered, and iOS 26 paints it as a
         // solid band over the page, hiding what Instagram pins to the bottom
         // (the comment box). The page fills the whole view instead.
         webView.scrollView.contentInsetAdjustmentBehavior = .never
-        self.refreshControl = refreshControl
 
         // Instagram is a single-page app: moving between pages uses
         // history.pushState, which never reaches the navigation delegate.
@@ -184,14 +182,19 @@ final class WebController: NSObject, ObservableObject {
     }
 
     /// Bottom bar tap. Taps Instagram's own (hidden) bar item so the page
-    /// navigates as usual; tapping the current tab scrolls back to the top.
+    /// navigates as usual.
     func select(_ tab: WebTab) {
         guard let webView else { return }
         setBarCollapsed(false)
         if tab == activeTab, tab != .create {
-            webView.scrollView.setContentOffset(
-                CGPoint(x: 0, y: -webView.scrollView.adjustedContentInset.top), animated: true)
-            evaluate(ContentScripts.scrollToTopJS)
+            // Like Instagram's app: tapping the current tab scrolls back to
+            // the top; tapping Home again once there refreshes the feed.
+            if tab == .home && webView.scrollView.contentOffset.y <= 1 {
+                reload()
+            } else {
+                webView.scrollView.setContentOffset(.zero, animated: true)
+                evaluate(ContentScripts.scrollToTopJS)
+            }
             return
         }
         webView.evaluateJavaScript(ContentScripts.tapJS(tab.rawValue), in: nil, in: ContentScripts.world) { [weak self] result in
@@ -228,18 +231,6 @@ final class WebController: NSObject, ObservableObject {
     }
 
     // MARK: - Private
-
-    @objc private func pullToRefresh() {
-        reload()
-        // Never leave the spinner stuck if no delegate callback arrives.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
-            self?.endRefreshing()
-        }
-    }
-
-    private func endRefreshing() {
-        if let refreshControl, refreshControl.isRefreshing { refreshControl.endRefreshing() }
-    }
 
     private func urlDidChange(_ url: URL?) {
         evaluate(ContentScripts.refreshJS)
@@ -357,7 +348,6 @@ final class WebController: NSObject, ObservableObject {
     }
 
     private func handle(_ error: Error, provisional: Bool) {
-        endRefreshing()
         let nsError = error as NSError
         // Cancelled loads (including ones our own policy cancelled) aren't failures.
         if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled { return }
@@ -424,7 +414,6 @@ extension WebController: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        endRefreshing()
         evaluate(ContentScripts.refreshJS)
     }
 
@@ -439,7 +428,6 @@ extension WebController: WKNavigationDelegate {
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         // The page process crashed or was killed for memory; bring it back,
         // unless it keeps dying, in which case let the user retry by hand.
-        endRefreshing()
         let now = Date()
         defer { lastTermination = now }
         if let last = lastTermination, now.timeIntervalSince(last) < 15 {
