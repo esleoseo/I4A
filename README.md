@@ -33,6 +33,7 @@ I4A/
 ├─ UsageTracker.swift    하루 사용 시간 측정·저장
 ├─ AppSettings.swift     설정(UserDefaults), 관리자 정책 적용
 ├─ AdminSync.swift       관리자 서버와 동기화(정책 받기, 사용량·설치 여부 보고)
+├─ Config/Base.xcconfig  공통 빌드 설정 (개인 설정은 git이 무시하는 Local.xcconfig에)
 ├─ InstagramApp.swift    인스타그램 앱 감지, 알림, 백그라운드 확인
 ├─ FloatingTabBar.swift  하단 플로팅 글라스 탭 바
 ├─ WebTab.swift          탭 정의, 탭별 경로
@@ -40,14 +41,39 @@ I4A/
 └─ LimitReachedView.swift 시간 초과 화면
 I4ATests/                단위 테스트 (URL 판정, 시간 측정, 설정, 관리자 정책, 탭)
 admin/                   관리자 페이지 + API (Cloudflare Worker)
+scripts/mac-update.sh    업데이트 스크립트
+scripts/gen_xcodeproj.py Xcode 프로젝트 파일 생성기 (소스 파일을 추가·삭제했을 때)
 ```
 
 ## 설치 (내 아이폰에 직접)
 
 1. Mac에서 Xcode(15 이상)로 `I4A.xcodeproj`를 엽니다.
-2. `I4A` 타깃 → **Signing & Capabilities**에서 Team을 내 Apple ID로 고르고, 필요하면 Bundle Identifier(`com.esleoseo.i4a`)를 고유한 값으로 바꿉니다.
+2. 개인 설정을 넣습니다. 둘 중 편한 방법으로 하세요.
+   - **Xcode에서**: `I4A` 타깃 → **Signing & Capabilities**에서 Team을 고르고, 필요하면 Bundle Identifier를 고유한 값으로 바꿉니다. 다음 업데이트 때 스크립트가 이 값을 `I4A/Config/Local.xcconfig`로 옮겨 둡니다.
+   - **파일로**: `I4A/Config/Local.xcconfig.example`을 같은 폴더에 `Local.xcconfig`로 복사하고 값을 채웁니다(Team ID, 번들 ID, 관리자 서버 주소). git이 무시하는 파일이라 업데이트를 막지 않습니다.
 3. 아이폰을 연결하고 실행(⌘R)합니다. 처음엔 아이폰 **설정 → 일반 → VPN 및 기기 관리**에서 개발자를 신뢰해 주세요.
 4. 무료 Apple ID는 7일마다 다시 설치해야 합니다(유료 개발자 계정은 1년).
+
+## 업데이트
+
+```bash
+bash scripts/mac-update.sh
+```
+
+어느 폴더에서 실행해도 레포 맨 위로 이동해서 돕니다.
+
+1. **Xcode가 바꾼 파일 정리**: Xcode가 고쳐 놓은 프로젝트 파일과 스킴을 되돌립니다. 그 전에 그 안의 개인 설정(서명 Team, 번들 ID)을 `I4A/Config/Local.xcconfig`로 옮겨 둡니다. 예전 버전에서 `AdminSync.swift`에 적어 둔 관리자 서버 주소도 옮깁니다.
+2. **직접 고친 파일 확인**: 다른 파일에 고친 내용이 남아 있으면 지우지 않고 멈춥니다. 무엇을 되돌리면 되는지(`git checkout -- <파일>`) 알려 줍니다.
+3. **`git pull`**: 최신 코드를 받습니다.
+4. **개인 설정 확인**: `Local.xcconfig`에 저장된 값을 보여 줍니다.
+
+끝나면 Xcode에서 ▶(⌘R)로 다시 설치하면 됩니다. Xcode가 열려 있었다면 닫았다가 다시 여세요.
+
+> 이 스크립트가 들어오기 전 버전에서 처음 업데이트할 때는 스크립트가 아직 내 컴퓨터에 없습니다. 이때만 아래처럼 최신 스크립트를 받아서 실행하세요.
+>
+> ```bash
+> cd ~/Documents/works/I4A && git fetch origin && git show origin/claude/i4a-instagram-app-8vytm3:scripts/mac-update.sh | bash
+> ```
 
 > 팁: 효과를 보려면 원래 인스타그램 앱은 지우거나 스크린타임으로 막아 두세요.
 

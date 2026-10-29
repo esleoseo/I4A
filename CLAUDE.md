@@ -19,3 +19,9 @@ Xcode가 없는 환경이라 Swift 컴파일과 단위 테스트는 세션에서
 - **관리자 서버**(`admin/`): `npx wrangler dev`로 띄워 curl과 Playwright로 API와 페이지를 확인한다. `.dev.vars`에 `ADMIN_TOKEN=...`을 넣는다(커밋하지 않음).
 - **프로젝트 파일**: `xmllint --noout`로 plist/scheme을, Python `openstep_parser`로 `project.pbxproj`를 파싱하고 모든 ID 참조가 존재하는지 확인한다.
 - Swift 코드를 바꿨을 때는 API 시그니처와 iOS 16 배포 대상 호환성을 직접 꼼꼼히 검토한다. 컴파일 확인이 꼭 필요하면 위 규칙대로 허락을 받는다.
+
+## 프로젝트 구조 메모
+
+- `I4A.xcodeproj/project.pbxproj`는 `scripts/gen_xcodeproj.py`로 생성한다. 소스 파일을 추가·삭제하면 `python3 scripts/gen_xcodeproj.py`를 다시 돌린다(손으로 고치지 않는다).
+- 개인 값(서명 Team, 번들 ID, 관리자 서버 호스트)은 git이 무시하는 `I4A/Config/Local.xcconfig`에 둔다. 추적되는 파일(프로젝트 파일, 소스)에 넣으면 사용자의 `git pull`이 막힌다.
+- 사용자는 `bash scripts/mac-update.sh`로 업데이트한다. 이 스크립트가 다루는 파일(프로젝트 파일, 스킴, `Local.xcconfig`)을 바꿀 때는 스크립트도 함께 맞추고, 옛 버전 클론에서 첫 업데이트가 되는지 세션 안에서 시뮬레이션한다.

@@ -1,0 +1,12 @@
+// Copy this file to Local.xcconfig in the same folder and fill in your values.
+// Git ignores Local.xcconfig. scripts/mac-update.sh also fills it in for you
+// from what you picked in Xcode's Signing & Capabilities.
+
+// Your Apple developer team ID (Xcode > Settings > Accounts, or Signing & Capabilities).
+DEVELOPMENT_TEAM = ABCDE12345
+
+// A bundle ID that's unique to you.
+I4A_BUNDLE_ID = com.yourname.i4a
+
+// Admin server host, without https:// (see admin/README.md). Leave empty for no admin.
+I4A_ADMIN_HOST = i4a-admin.yourname.workers.dev

@@ -1,0 +1,12 @@
+// Shared build settings for both targets.
+//
+// Personal values (signing team, bundle ID, admin server) go in
+// Local.xcconfig next to this file. Git ignores it, so editing it never
+// blocks `git pull`. See Local.xcconfig.example.
+
+I4A_BUNDLE_ID = com.esleoseo.i4a
+DEVELOPMENT_TEAM =
+// Host of the admin server, without https:// (`//` starts a comment here).
+I4A_ADMIN_HOST =
+
+#include? "Local.xcconfig"

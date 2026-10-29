@@ -1,14 +1,14 @@
 import Foundation
 
 enum AdminConfig {
-    /// Address of your admin server (see admin/README.md), for example
-    /// "https://i4a-admin.yourname.workers.dev". Leave empty to use I4A
-    /// without an admin.
-    static let serverURL = ""
-
+    /// The admin server (see admin/README.md). Its host is set as
+    /// I4A_ADMIN_HOST in I4A/Config/Local.xcconfig and reaches the app through
+    /// Info.plist, so it never has to be edited in source. Empty: no admin.
     static var baseURL: URL? {
-        let trimmed = serverURL.trimmingCharacters(in: .whitespaces)
-        return trimmed.isEmpty ? nil : URL(string: trimmed)
+        let value = (Bundle.main.object(forInfoDictionaryKey: "I4AAdminHost") as? String ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, !value.hasPrefix("$(") else { return nil }
+        return URL(string: value.contains("://") ? value : "https://" + value)
     }
 }
 

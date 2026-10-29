@@ -6,3 +6,5 @@ build/
 *.ipa
 *.dSYM.zip
 *.dSYM
+I4A/Config/Local.xcconfig
+I4A.xcodeproj/project.xcworkspace/

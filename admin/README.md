@@ -36,10 +36,10 @@
 
    끝나면 `https://i4a-admin.<내계정>.workers.dev` 같은 주소가 나와요. 이 주소가 **관리자 페이지**예요.
 
-5. 앱에 서버 주소를 넣어요. `I4A/AdminSync.swift` 맨 위의 `serverURL`을 4번 주소로 바꾸고, Xcode에서 사용자 아이폰에 다시 설치해요.
+5. 앱에 서버 주소를 넣어요. `I4A/Config/Local.xcconfig`(없으면 `Local.xcconfig.example`을 복사해서 만들어요)에 4번 주소를 **`https://` 없이** 적고, Xcode에서 사용자 아이폰에 다시 설치해요. 이 파일에서는 `//`가 주석이라 `https://`를 쓰면 안 돼요.
 
-   ```swift
-   static let serverURL = "https://i4a-admin.<내계정>.workers.dev"
+   ```
+   I4A_ADMIN_HOST = i4a-admin.<내계정>.workers.dev
    ```
 
 ## 사용

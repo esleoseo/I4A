@@ -3,6 +3,9 @@
 <plist version="1.0">
 <dict>
 	<!-- Keys Xcode can't generate from build settings; merged with the generated Info.plist. -->
+	<!-- Admin server host from I4A_ADMIN_HOST (I4A/Config/Local.xcconfig). -->
+	<key>I4AAdminHost</key>
+	<string>$(I4A_ADMIN_HOST)</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>instagram</string>
