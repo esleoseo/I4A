@@ -7,6 +7,7 @@ struct ContentView: View {
     @EnvironmentObject private var adminSync: AdminSync
     @Environment(\.scenePhase) private var scenePhase
     @State private var showSettings = false
+    @State private var showAbout = false
     @State private var showReelNotice = false
     @State private var noticeToken = 0
 
@@ -20,7 +21,7 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            TopBar(showSettings: $showSettings)
+            TopBar(showSettings: $showSettings, showAbout: $showAbout)
             ZStack(alignment: .bottom) {
                 // Runs under the home indicator: no dead strip at the bottom.
                 InstagramWebView(controller: web)
@@ -54,6 +55,13 @@ struct ContentView: View {
         }
         // The keyboard covers the bar instead of pushing it up.
         .ignoresSafeArea(.keyboard, edges: .bottom)
+        .overlay {
+            if showAbout {
+                AboutView { showAbout = false }
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: showAbout)
         .animation(.easeInOut(duration: 0.25), value: isBlocked)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showsTabBar)
         .animation(.easeInOut(duration: 0.2), value: showReelNotice)
@@ -104,7 +112,7 @@ private struct TopBar: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var tracker: UsageTracker
     @Binding var showSettings: Bool
-    @State private var showAbout = false
+    @Binding var showAbout: Bool
 
     var body: some View {
         HStack(spacing: 6) {
@@ -118,11 +126,6 @@ private struct TopBar: View {
                     .contentShape(Rectangle())
             }
             .accessibilityLabel("앱 정보")
-            .alert("Instagram for ADHDs", isPresented: $showAbout) {
-                Button("확인", role: .cancel) {}
-            } message: {
-                Text("이레와 함께하는 은성오빠의 사랑으로 제작됨")
-            }
             Spacer(minLength: 6)
             usageLabel
             Button {
@@ -190,5 +193,44 @@ enum TimeFormat {
         let minutes = (s % 3600) / 60
         if hours == 0 { return "\(minutes)분" }
         return minutes == 0 ? "\(hours)시간" : "\(hours)시간 \(minutes)분"
+    }
+}
+
+/// App info, centred. A card of its own rather than a system alert, whose
+/// text iOS 26 aligns to the left.
+private struct AboutView: View {
+    let dismiss: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+                .onTapGesture(perform: dismiss)
+            VStack(spacing: 0) {
+                VStack(spacing: 8) {
+                    Text("Instagram for ADHDs")
+                        .font(.headline)
+                    Text("이레와 함께하는 은성오빠의 사랑으로 제작됨")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 22)
+                Divider()
+                Button(action: dismiss) {
+                    Text("확인")
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .contentShape(Rectangle())
+                }
+            }
+            .frame(maxWidth: 300)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .padding(.horizontal, 40)
+            .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isModal)
+        }
     }
 }
