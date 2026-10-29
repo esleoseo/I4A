@@ -120,7 +120,9 @@ enum ContentScripts {
           // links, and none of the page's content. While a page is still
           // loading, its whole fixed frame can briefly be as small as the bar;
           // once content arrives inside, the check fails and it's shown again.
-          var navDisabled = false;
+          // The page (path) where replacing the bar was given up; see
+          // guardBlankPage. Pages after it get their own try.
+          var navDisabledPath = null;
 
           function looksLikeNav(el) {
             if (!el || !el.isConnected) { return false; }
@@ -136,7 +138,7 @@ enum ContentScripts {
           }
 
           function findNav() {
-            if (navDisabled) { return null; }
+            if (navDisabledPath === location.pathname) { return null; }
             if (nav && looksLikeNav(nav)) { return nav; }
             // Already found and hidden earlier (its size is 0 now, so it can't
             // be measured again; only its contents are checked).
@@ -169,7 +171,8 @@ enum ContentScripts {
           // Last line of defence: if the middle of the page is empty with the
           // bar hidden but the "bar" covers it once shown, what was hidden is
           // the page itself. Then stop replacing the bar for this page, so
-          // Instagram's own UI is back.
+          // Instagram's own UI is back. (refresh runs this right after
+          // findNav, so a wrongly hidden page isn't painted in between.)
           function guardBlankPage() {
             if (!nav) { return; }
             var x = window.innerWidth / 2, y = window.innerHeight / 2;
@@ -179,7 +182,7 @@ enum ContentScripts {
             var shown = document.elementFromPoint(x, y);
             if (shown && nav.contains(shown)) {
               nav = null;
-              navDisabled = true;
+              navDisabledPath = location.pathname;
             } else {
               nav.setAttribute('data-i4a-nav', '');
             }
