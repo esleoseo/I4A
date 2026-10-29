@@ -221,6 +221,7 @@ app_s = {
  'INFOPLIST_KEY_NSCameraUsageDescription':'게시물과 스토리를 촬영해 올리려면 카메라 접근이 필요해요.',
  'INFOPLIST_KEY_NSMicrophoneUsageDescription':'동영상을 촬영해 올리려면 마이크 접근이 필요해요.',
  'INFOPLIST_KEY_NSPhotoLibraryUsageDescription':'사진과 동영상을 골라 올리려면 사진 보관함 접근이 필요해요.',
+ 'INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription':'사진과 동영상을 사진 보관함에 저장하려면 접근이 필요해요.',
  'INFOPLIST_KEY_UIApplicationSceneManifest_Generation':'YES','INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents':'YES','INFOPLIST_KEY_UILaunchScreen_Generation':'YES',
  'INFOPLIST_KEY_UISupportedInterfaceOrientations':'UIInterfaceOrientationPortrait',
  'LD_RUNPATH_SEARCH_PATHS':['$(inherited)','@executable_path/Frameworks'],'MARKETING_VERSION':'1.0','PRODUCT_BUNDLE_IDENTIFIER':'$(I4A_BUNDLE_ID)','PRODUCT_NAME':'$(TARGET_NAME)',

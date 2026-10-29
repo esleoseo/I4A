@@ -104,11 +104,38 @@ enum ContentScripts {
 
           // Instagram's bottom bar: a fixed element at the bottom of the
           // viewport holding the Explore / Direct links.
+          //
+          // Hiding the wrong element would hide the page itself, so a
+          // candidate (and the element already hidden, checked again on every
+          // refresh) must look like a bar and nothing more: a handful of
+          // links, and none of the page's content. While a page is still
+          // loading, its whole fixed frame can briefly be as small as the bar;
+          // once content arrives inside, the check fails and it's shown again.
+          var navDisabled = false;
+
+          function looksLikeNav(el) {
+            if (!el || !el.isConnected) { return false; }
+            if (el.querySelector('main, article, textarea, input:not([type="file"]):not([type="hidden"]), video, [role="main"], [role="feed"], [role="dialog"], [contenteditable="true"]')) { return false; }
+            var links = el.querySelectorAll('a[href]').length;
+            return links >= 3 && links <= 12;
+          }
+
+          function unmarkNav() {
+            var marked = document.querySelectorAll('[data-i4a-nav]');
+            for (var i = 0; i < marked.length; i++) { marked[i].removeAttribute('data-i4a-nav'); }
+            nav = null;
+          }
+
           function findNav() {
-            if (nav && nav.isConnected) { return nav; }
+            if (navDisabled) { return null; }
+            if (nav && looksLikeNav(nav)) { return nav; }
             // Already found and hidden earlier (its size is 0 now, so it can't
-            // be measured again).
-            nav = document.querySelector('[data-i4a-nav]');
+            // be measured again; only its contents are checked).
+            var marked = document.querySelectorAll('[data-i4a-nav]');
+            nav = null;
+            for (var m = 0; m < marked.length; m++) {
+              if (!nav && looksLikeNav(marked[m])) { nav = marked[m]; } else { marked[m].removeAttribute('data-i4a-nav'); }
+            }
             if (nav) { return nav; }
             var probes = document.querySelectorAll('a[href="/explore/"], a[href^="/direct/inbox"]');
             for (var i = 0; i < probes.length && !nav; i++) {
@@ -119,7 +146,8 @@ enum ContentScripts {
                 var rect = el.getBoundingClientRect();
                 if (rect.height > 0 && rect.height < 160 &&
                     rect.bottom >= window.innerHeight - 8 &&
-                    el.querySelectorAll('a[href]').length >= 3) {
+                    rect.width >= window.innerWidth * 0.6 &&
+                    looksLikeNav(el)) {
                   nav = el;
                 }
                 break;
@@ -127,6 +155,25 @@ enum ContentScripts {
             }
             if (nav) { nav.setAttribute('data-i4a-nav', ''); }
             return nav;
+          }
+
+          // Last line of defence: if the middle of the page is empty with the
+          // bar hidden but the "bar" covers it once shown, what was hidden is
+          // the page itself. Then stop replacing the bar for this page, so
+          // Instagram's own UI is back.
+          function guardBlankPage() {
+            if (!nav) { return; }
+            var x = window.innerWidth / 2, y = window.innerHeight / 2;
+            var hit = document.elementFromPoint(x, y);
+            if (hit && hit !== document.documentElement && hit !== document.body) { return; }
+            nav.removeAttribute('data-i4a-nav');
+            var shown = document.elementFromPoint(x, y);
+            if (shown && nav.contains(shown)) {
+              nav = null;
+              navDisabled = true;
+            } else {
+              nav.setAttribute('data-i4a-nav', '');
+            }
           }
 
           function kindOf(el) {
@@ -381,6 +428,7 @@ enum ContentScripts {
             if (!ensureStyle()) { return; }
             updateShownNav();
             findNav();
+            guardBlankPage();
             improveLogin();
             releaseVideos();
             report();

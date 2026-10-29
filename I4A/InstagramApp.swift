@@ -68,10 +68,9 @@ enum InstagramApp {
             center.removePendingNotificationRequests(withIdentifiers: [reminderID])
         }
         let usage = UsageTracker.storedUsage()
-        await withCheckedContinuation { continuation in
-            AdminSync.sendReport(usedSeconds: usage.seconds, day: usage.day, instagramInstalled: installed) {
-                continuation.resume()
-            }
+        if let request = AdminSync.reportRequest(usedSeconds: usage.seconds, day: usage.day, instagramInstalled: installed) {
+            // Cancelled along with the task when iOS ends it.
+            _ = try? await AdminSync.backgroundSession.data(for: request)
         }
     }
 

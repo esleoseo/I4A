@@ -86,13 +86,9 @@ final class AdminSync: ObservableObject {
         )
     }
 
-    /// Also used by the background refresh task.
-    static func sendReport(usedSeconds: Int, day: String, instagramInstalled: Bool,
-                           session: URLSession = .shared, completion: (() -> Void)? = nil) {
-        guard let url = AdminConfig.baseURL?.appendingPathComponent("api/report") else {
-            completion?()
-            return
-        }
+    /// The report request, or nil when no admin server is set.
+    static func reportRequest(usedSeconds: Int, day: String, instagramInstalled: Bool) -> URLRequest? {
+        guard let url = AdminConfig.baseURL?.appendingPathComponent("api/report") else { return nil }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -102,6 +98,20 @@ final class AdminSync: ObservableObject {
             "instagramInstalled": instagramInstalled,
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        session.dataTask(with: request) { _, _, _ in completion?() }.resume()
+        return request
     }
+
+    static func sendReport(usedSeconds: Int, day: String, instagramInstalled: Bool, session: URLSession) {
+        guard let request = reportRequest(usedSeconds: usedSeconds, day: day, instagramInstalled: instagramInstalled) else { return }
+        session.dataTask(with: request) { _, _, _ in }.resume()
+    }
+
+    /// For the background refresh task, which iOS gives only about 30 seconds:
+    /// short timeouts, so a slow server can't keep the task past its budget.
+    static let backgroundSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 10
+        config.timeoutIntervalForResource = 15
+        return URLSession(configuration: config)
+    }()
 }
