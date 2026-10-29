@@ -19,6 +19,8 @@ enum ContentScripts {
     /// - `data-i4a-show-nav` on <html>: Instagram's bar is shown for a moment
     ///   (its "new post" button was used; what it opens is anchored to it).
     /// - `data-i4a-blocked`: a Reel's <video>, kept hidden and paused.
+    /// - `data-i4a-reel-tile`: an Explore grid tile that is a Reel although
+    ///   it links to `/p/`. Hidden but kept in place, so the grid doesn't move.
     /// - `data-i4a-dm` on <html>: a DM conversation; the Reels shared there
     ///   stay visible and can be opened one at a time.
     static let css = """
@@ -37,6 +39,10 @@ enum ContentScripts {
     }
     html[data-i4a-reels] video[data-i4a-blocked] {
         visibility: hidden !important;
+    }
+    html[data-i4a-reels] a[data-i4a-reel-tile] {
+        visibility: hidden !important;
+        pointer-events: none !important;
     }
     """
 
@@ -354,6 +360,31 @@ enum ContentScripts {
 
           // Lets videos go again once they're no longer a Reel player (Reels
           // switched off, or the element reused for something else).
+          // Explore shows Reels as tall (1:2) tiles that link to /p/CODE/, so
+          // the link rules miss them. Tell them apart by shape or by the Reels
+          // icon on them. Each tile is measured once per link it carries
+          // (the grid reuses its tiles as it scrolls).
+          function hideReelTiles() {
+            if (!hide || location.pathname.indexOf('/explore') !== 0) { return; }
+            var tiles = document.querySelectorAll('a[href*="/p/"]');
+            var unmeasured = false;
+            for (var i = 0; i < tiles.length; i++) {
+              var tile = tiles[i];
+              var href = tile.getAttribute('href');
+              if (tile.__i4aHref === href) { continue; }
+              var rect = tile.getBoundingClientRect();
+              if (!rect.width || !rect.height) { unmeasured = true; continue; } // not laid out yet
+              tile.__i4aHref = href;
+              var icon = tile.querySelector('svg[aria-label]');
+              var label = icon ? icon.getAttribute('aria-label') : '';
+              var reel = /릴스|reel|clip/i.test(label) || rect.height / rect.width >= 1.5;
+              if (reel !== tile.hasAttribute('data-i4a-reel-tile')) {
+                if (reel) { tile.setAttribute('data-i4a-reel-tile', ''); } else { tile.removeAttribute('data-i4a-reel-tile'); }
+              }
+            }
+            if (unmeasured) { setTimeout(schedule, 300); }
+          }
+
           function releaseVideos() {
             var blocked = document.querySelectorAll('video[data-i4a-blocked]');
             for (var i = 0; i < blocked.length; i++) {
@@ -447,6 +478,7 @@ enum ContentScripts {
             guardBlankPage();
             improveLogin();
             releaseVideos();
+            hideReelTiles();
             report();
           }
 

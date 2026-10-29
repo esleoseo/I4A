@@ -9,7 +9,7 @@ struct ContentView: View {
     @State private var showSettings = false
     @State private var showReelNotice = false
     @State private var noticeToken = 0
-    @State private var showInstagramAlert = false
+    @State private var showInstagramNotice = false
     /// Launched or back from the background since the last check. Brief
     /// inactive spells (permission prompts, the photo picker, Control
     /// Center) don't count.
@@ -40,6 +40,16 @@ struct ContentView: View {
                     .padding(.bottom, web.isBarCollapsed ? 0 : 4)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
+                if showInstagramNotice {
+                    // A banner rather than an alert: a modal alert colliding
+                    // with another presentation (a permission prompt, the photo
+                    // picker) could leave the screen unable to take touches.
+                    InstagramInstalledBanner { showInstagramNotice = false }
+                        .padding(.horizontal, 12)
+                        .padding(.top, 8)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
                 if showReelNotice {
                     ReelNotice()
                         .padding(.bottom, showsTabBar ? 84 : 24)
@@ -61,6 +71,7 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.25), value: isBlocked)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showsTabBar)
         .animation(.easeInOut(duration: 0.2), value: showReelNotice)
+        .animation(.easeInOut(duration: 0.25), value: showInstagramNotice)
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environmentObject(settings)
@@ -79,9 +90,7 @@ struct ContentView: View {
                     isFreshlyOpened = false
                     // Never on top of something already showing, e.g. the
                     // picker Instagram opens to add a story.
-                    if InstagramApp.isInstalled && !InstagramApp.isShowingSomethingOverApp {
-                        showInstagramAlert = true
-                    }
+                    if InstagramApp.isInstalled { showInstagramNotice = true }
                 }
             case .background:
                 isFreshlyOpened = true
@@ -89,11 +98,6 @@ struct ContentView: View {
             default:
                 break
             }
-        }
-        .alert(InstagramApp.alertTitle, isPresented: $showInstagramAlert) {
-            Button("확인", role: .cancel) {}
-        } message: {
-            Text(InstagramApp.alertMessage)
         }
         .onChange(of: settings.hideReels) { hide in
             web.setHideReels(hide)

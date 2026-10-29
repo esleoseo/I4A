@@ -50,6 +50,9 @@ final class WebController: NSObject, ObservableObject {
     private var isSuspended = false
     private var needsReload = false
     private var bounceScheduled = false
+    /// When the last few bounces off Reels happened, to catch a page that
+    /// keeps sending us back (stepping back, it reopens the Reel, and so on).
+    private var recentBounces: [Date] = []
     private var failedURL: URL?
     private var lastTermination: Date?
 
@@ -307,6 +310,15 @@ final class WebController: NSObject, ObservableObject {
             self.bounceScheduled = false
             guard self.hideReels, NavigationPolicy.isReels(self.webView.url),
                   !self.isGranted(self.webView.url) else { return }
+            let now = Date()
+            self.recentBounces = self.recentBounces.filter { now.timeIntervalSince($0) < 3 } + [now]
+            if self.recentBounces.count >= 3 {
+                // Stepping back keeps landing on Reels: start over from home
+                // with a fresh page, which also resets the page's own state.
+                self.recentBounces.removeAll()
+                self.webView.load(URLRequest(url: NavigationPolicy.homeURL))
+                return
+            }
             // The nearest earlier page that isn't a Reel, e.g. the DM a tapped
             // Reel was opened from when the user swipes on to the next one.
             if let back = self.webView.backForwardList.backList.last(where: { !NavigationPolicy.isReels($0.url) }) {
