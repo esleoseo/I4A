@@ -12,10 +12,7 @@ struct I4AApp: App {
         let tracker = UsageTracker()
         _settings = StateObject(wrappedValue: settings)
         _tracker = StateObject(wrappedValue: tracker)
-        _web = StateObject(wrappedValue: WebController(
-            hideReels: settings.hideReels,
-            dmReelAllowlist: settings.dmReelAllowlist
-        ))
+        _web = StateObject(wrappedValue: WebController(hideReels: settings.hideReels))
         _adminSync = StateObject(wrappedValue: AdminSync(settings: settings, tracker: tracker))
         InstagramApp.requestNotificationPermission()
     }

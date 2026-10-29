@@ -20,11 +20,6 @@ struct SettingsView: View {
         return sorted.filter { $0 <= settings.dailyLimitMinutes }
     }
 
-    /// "@a, @b"
-    private var allowedAccounts: String {
-        settings.dmReelAllowlist.map { "@" + $0 }.joined(separator: ", ")
-    }
-
     var body: some View {
         NavigationView {
             Form {
@@ -38,8 +33,8 @@ struct SettingsView: View {
                         } else {
                             Text("릴스 탭, 피드의 릴스, 프로필의 릴스 탭과 릴스 게시물을 숨기고 릴스 화면으로 이동하지 못하게 막아요.")
                         }
-                        if settings.hideReels && !settings.dmReelAllowlist.isEmpty {
-                            Text("예외: 다음 계정과의 1:1 DM에서 받은 릴스는 탭할 때마다 한 편씩 볼 수 있어요. \(allowedAccounts)")
+                        if settings.hideReels {
+                            Text("예외: DM으로 받은 릴스는 탭할 때마다 그 한 편만 볼 수 있어요. 다음 릴스로 넘기기는 막혀요.")
                         }
                     }
                 }

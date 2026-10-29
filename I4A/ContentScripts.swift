@@ -17,8 +17,8 @@ enum ContentScripts {
     /// - `data-i4a-feed` on <html>: the home feed is showing.
     /// - `data-i4a-nav`: Instagram's own bottom bar, replaced by the native one.
     /// - `data-i4a-blocked`: a Reel's <video>, kept hidden and paused.
-    /// - `data-i4a-dm-allowed` on <html>: a 1:1 DM with an allowed account;
-    ///   the Reels shared there stay visible and can be opened one at a time.
+    /// - `data-i4a-dm` on <html>: a DM conversation; the Reels shared there
+    ///   stay visible and can be opened one at a time.
     static let css = """
     html[data-i4a-reels] a[href="/reels/"],
     html[data-i4a-reels] a[href="/reels"],
@@ -26,7 +26,7 @@ enum ContentScripts {
     html[data-i4a-reels] a[href^="/reels?"],
     html[data-i4a-reels] a[href*="instagram.com/reels"],
     html[data-i4a-reels] a[href$="/reels/"]:not([href*="/explore/"]),
-    html[data-i4a-reels]:not([data-i4a-dm-allowed]) a[href*="/reel/"]:not([href*="/explore/"]),
+    html[data-i4a-reels]:not([data-i4a-dm]) a[href*="/reel/"]:not([href*="/explore/"]),
     html[data-i4a-reels] div:has(> a[href="/reels/"]:only-child),
     html[data-i4a-reels] li:has(> a[href="/reels/"]:only-child),
     html[data-i4a-reels][data-i4a-feed] article:has(a[href*="/reel/"]:not([href*="/explore/"])),
@@ -38,38 +38,17 @@ enum ContentScripts {
     }
     """
 
-    /// What the page script needs to know from the app.
-    struct PageConfig: Equatable {
-        var hideReels: Bool
-        /// Usernames whose 1:1 DMs may show the Reels they send, one per tap.
-        var dmReelAllowlist: [String]
-        /// The user's own profile path ("/name/"), to tell them apart from
-        /// the other person in a DM.
-        var ownProfile: String?
-
-        var json: String {
-            let object: [String: Any] = [
-                "hide": hideReels,
-                "allow": dmReelAllowlist,
-                "me": ownProfile.map { $0 as Any } ?? NSNull(),
-            ]
-            guard let data = try? JSONSerialization.data(withJSONObject: object),
-                  let json = String(data: data, encoding: .utf8) else { return "{}" }
-            return json
-        }
-    }
-
-    static func userScript(_ config: PageConfig) -> WKUserScript {
+    static func userScript(hideReels: Bool) -> WKUserScript {
         WKUserScript(
-            source: bootstrapJS(config),
+            source: bootstrapJS(hideReels: hideReels),
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true,
             in: world
         )
     }
 
-    static func configureJS(_ config: PageConfig) -> String {
-        "window.__i4a && window.__i4a.configure(\(config.json)); true;"
+    static func setHideReelsJS(_ hide: Bool) -> String {
+        "window.__i4a && window.__i4a.setHideReels(\(hide)); true;"
     }
 
     /// Re-applies everything and reports the page state; called on every URL change.
@@ -82,15 +61,12 @@ enum ContentScripts {
 
     static let scrollToTopJS = "window.scrollTo({ top: 0, behavior: 'smooth' }); true;"
 
-    static func bootstrapJS(_ config: PageConfig) -> String {
+    static func bootstrapJS(hideReels: Bool) -> String {
         """
         (function () {
           'use strict';
-          var config = \(config.json);
-          if (window.__i4a) { window.__i4a.configure(config); return; }
-          var hide = !!config.hide;
-          var allow = config.allow || [];
-          var me = config.me || null;
+          var hide = \(hideReels);
+          if (window.__i4a) { window.__i4a.setHideReels(hide); return; }
 
           var STYLE_ID = 'i4a-style';
           var CSS = \(jsStringLiteral(css));
@@ -120,7 +96,7 @@ enum ContentScripts {
             setFlag('data-i4a-reels', hide);
             // Feed rules only apply on the home feed; post pages also use <article>.
             setFlag('data-i4a-feed', location.pathname === '/');
-            setFlag('data-i4a-dm-allowed', inAllowedThread());
+            setFlag('data-i4a-dm', inDMThread());
             return true;
           }
 
@@ -197,20 +173,22 @@ enum ContentScripts {
             setAutocomplete('input[name="verificationCode"], input[name="security_code"], input[name="approvals_code"]', 'one-time-code');
           }
 
-          // A Reel shared in a DM plays in an overlay while the URL stays on
-          // /direct/, so URL-based blocking never sees it.
-          // 1) Taps on Reel links there are cancelled before Instagram sees them.
-          // 2) Backstop: a large video playing in a DM, a dialog, or on a Reel
-          //    post page is hidden, muted and paused, again whenever it
-          //    resumes. Only the <video> is hidden, never its container, so
-          //    the conversation itself can't disappear.
-          // Exception: in a 1:1 DM with an allowed account, a tap lets exactly
-          // one Reel play. Moving on to another Reel is blocked again.
+          // Reels shared in a DM conversation may be watched, one per tap:
+          // after a tap there, the first Reel that starts playing is let
+          // through. Anything else that plays as a Reel is hidden, muted and
+          // paused, again whenever it resumes: swiping on to the next Reel
+          // (a new source in the same player, or another player), a Reel page
+          // other than the tapped one, or a Reel in a dialog elsewhere.
+          // Only the <video> is hidden, never its container, so the
+          // conversation itself can't disappear.
           var lastNotice = 0;
           var tapAt = 0;
-          var grant = null;
-          var grantedCode = null;
           var TAP_WINDOW = 8000;
+          // The Reel currently allowed to play: { video, src }.
+          var grant = null;
+          // The tapped Reel's code, when it opens as its own page.
+          var grantedCode = null;
+          var pageGranted = false;
           // True while this script clicks something itself, so those clicks
           // never count as the user's tap.
           var selfClick = false;
@@ -225,50 +203,26 @@ enum ContentScripts {
             if (now - lastNotice > 4000) { lastNotice = now; post({ blockedReel: true }); }
           }
 
-          // The other person of a 1:1 thread: the single profile linked from
-          // the thread header. Group threads link no single profile, so they
-          // (and anything unrecognised) are never allowed.
-          function threadPartner() {
-            if (!/^\\/direct\\/t\\//.test(location.pathname)) { return null; }
-            var names = {};
-            var count = 0;
-            var links = document.querySelectorAll('a[href]');
-            for (var i = 0; i < links.length; i++) {
-              var href = links[i].getAttribute('href');
-              var match = /^\\/([A-Za-z0-9._]+)\\/?$/.exec(href);
-              if (!match || RESERVED.test(href + '/')) { continue; }
-              var name = match[1].toLowerCase();
-              if (me && me.toLowerCase() === '/' + name + '/') { continue; }
-              var rect = links[i].getBoundingClientRect();
-              if (rect.height === 0 || rect.top > 140) { continue; }
-              if (!names[name]) { names[name] = true; count++; }
-            }
-            if (count !== 1) { return null; }
-            for (var key in names) { return key; }
-            return null;
+          function inDMThread() {
+            return hide && /^\\/direct\\/t\\//.test(location.pathname);
           }
 
-          function inAllowedThread() {
-            if (!hide || !allow.length) { return false; }
-            var partner = threadPartner();
-            return !!partner && allow.indexOf(partner) !== -1;
+          function onGrantedPage() {
+            return !!grantedCode && location.pathname.indexOf('/' + grantedCode + '/') !== -1;
           }
 
           function srcOf(video) { return video.currentSrc || video.src || ''; }
 
-          // A Reel may play only right after a tap in an allowed thread, and
-          // only while it stays the same video and source.
           function isGranted(video) {
-            if (tapAt && Date.now() - tapAt < TAP_WINDOW && inAllowedThread()) {
-              tapAt = 0;
-              grant = { video: video, src: srcOf(video) };
-              video.removeAttribute('data-i4a-blocked');
-              return true;
-            }
-            // The tapped Reel opened as its own page (/reel/CODE/, /p/CODE/).
-            if (grantedCode && location.pathname.indexOf('/' + grantedCode + '/') !== -1) { return true; }
-            return !!grant && grant.video === video && grant.src === srcOf(video) &&
-              location.pathname.indexOf('/direct/') === 0;
+            if (grant && grant.video === video && grant.src === srcOf(video)) { return true; }
+            var tapped = tapAt && Date.now() - tapAt < TAP_WINDOW && inDMThread();
+            var firstOnPage = onGrantedPage() && !pageGranted;
+            if (!tapped && !firstOnPage) { return false; }
+            tapAt = 0;
+            if (firstOnPage) { pageGranted = true; }
+            grant = { video: video, src: srcOf(video) };
+            video.removeAttribute('data-i4a-blocked');
+            return true;
           }
 
           function reelCode(href) {
@@ -281,6 +235,7 @@ enum ContentScripts {
             var path = location.pathname;
             if (path.indexOf('/stories/') === 0) { return false; }
             var inContext = path.indexOf('/direct/') === 0 ||
+              /\\/reels?\\/[A-Za-z0-9_-]+/.test(path) ||
               !!video.closest('[role="dialog"], [aria-modal="true"]');
             if (!inContext && /^\\/p\\//.test(path)) {
               var link = document.querySelector('link[rel="canonical"], meta[property="og:url"]');
@@ -329,13 +284,14 @@ enum ContentScripts {
           document.addEventListener('click', function (event) {
             if (selfClick || !hide || location.pathname.indexOf('/direct/') !== 0 || !event.target.closest) { return; }
             var link = event.target.closest('a[href*="/reel/"], a[href*="/reels/"]');
-            if (inAllowedThread()) {
-              // Opens one Reel: the overlay player, or a Reel page the app
-              // lets through for this code only.
+            if (inDMThread()) {
+              // Opens one Reel: in the overlay player, or as its own page,
+              // which the app lets through for this code only.
               tapAt = Date.now();
               var code = link && reelCode(link.getAttribute('href'));
               if (code) {
                 grantedCode = code;
+                pageGranted = false;
                 post({ grantReel: code });
               }
               return;
@@ -355,10 +311,8 @@ enum ContentScripts {
               if (!isReelPlayer(blocked[i])) { blocked[i].removeAttribute('data-i4a-blocked'); }
             }
             var inDirect = location.pathname.indexOf('/direct/') === 0;
-            if (grant && (!grant.video.isConnected || !inDirect)) { grant = null; }
-            if (grantedCode && !inDirect && location.pathname.indexOf('/' + grantedCode + '/') === -1) {
-              grantedCode = null;
-            }
+            if (grant && (!grant.video.isConnected || (!inDirect && !onGrantedPage()))) { grant = null; }
+            if (grantedCode && !inDirect && !onGrantedPage()) { grantedCode = null; }
           }
 
           function hasOverlay() {
@@ -405,12 +359,7 @@ enum ContentScripts {
 
           window.__i4a = {
             refresh: refresh,
-            configure: function (value) {
-              hide = !!value.hide;
-              allow = value.allow || [];
-              me = value.me || null;
-              refresh();
-            },
+            setHideReels: function (value) { hide = !!value; refresh(); },
             tap: function (kind) {
               findNav();
               collectNavItems();
