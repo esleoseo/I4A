@@ -16,6 +16,8 @@ enum ContentScripts {
     /// - `data-i4a-reels` on <html>: Reels hiding is on.
     /// - `data-i4a-feed` on <html>: the home feed is showing.
     /// - `data-i4a-nav`: Instagram's own bottom bar, replaced by the native one.
+    /// - Focus rings are off: Instagram focuses the page title after moving
+    ///   to a page, and in a web view on a touch screen that drew a blue box.
     /// - `data-i4a-blocked`: a Reel's <video>, kept hidden and paused.
     /// - `data-i4a-reel-tile`: an Explore grid tile that is a Reel although
     ///   it links to `/p/`. Hidden but kept in place, so the grid doesn't move.
@@ -34,6 +36,9 @@ enum ContentScripts {
     html[data-i4a-reels][data-i4a-feed] article:has(a[href*="/reel/"]:not([href*="/explore/"])),
     [data-i4a-nav] {
         display: none !important;
+    }
+    :focus, :focus-visible {
+        outline: none !important;
     }
     html[data-i4a-reels] video[data-i4a-blocked] {
         visibility: hidden !important;

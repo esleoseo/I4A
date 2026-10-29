@@ -71,6 +71,12 @@ final class AdminPolicyTests: XCTestCase {
         XCTAssertEqual(settings.dailyLimitMinutes, 90)
     }
 
+    func testLimitIsOffByDefault() {
+        let settings = AppSettings(defaults: defaults)
+        XCTAssertFalse(settings.limitEnabled)
+        XCTAssertFalse(settings.isLimitReached(usedSeconds: 86_400))
+    }
+
     func testInvalidPolicyIsIgnored() {
         let settings = AppSettings(defaults: defaults)
         settings.apply(policy(locked: true, minutes: 0, at: "t1"))

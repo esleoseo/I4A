@@ -18,6 +18,7 @@ final class WebTabTests: XCTestCase {
         XCTAssertTrue(WebTab.hidesBar(onPath: "/direct/t/123/"))
         XCTAssertTrue(WebTab.hidesBar(onPath: "/accounts/login/"))
         XCTAssertTrue(WebTab.hidesBar(onPath: "/stories/someone/1/"))
+        XCTAssertTrue(WebTab.hidesBar(onPath: "/p/abc/comments/"))
         XCTAssertFalse(WebTab.hidesBar(onPath: "/direct/inbox/"))
         XCTAssertFalse(WebTab.hidesBar(onPath: "/"))
     }
@@ -27,12 +28,5 @@ final class WebTabTests: XCTestCase {
         XCTAssertEqual(WebTab.direct.fallbackPath(profilePath: nil), "/direct/inbox/")
         XCTAssertEqual(WebTab.profile.fallbackPath(profilePath: "/me/"), "/me/")
         XCTAssertNil(WebTab.profile.fallbackPath(profilePath: nil))
-    }
-
-    func testBarStaysWhereInstagramDropsItsOwn() {
-        XCTAssertTrue(WebTab.keepsBarWithoutInstagramNav(onPath: "/direct/inbox/"))
-        XCTAssertTrue(WebTab.keepsBarWithoutInstagramNav(onPath: "/direct/requests/"))
-        XCTAssertFalse(WebTab.keepsBarWithoutInstagramNav(onPath: "/direct/t/123/"))
-        XCTAssertFalse(WebTab.keepsBarWithoutInstagramNav(onPath: "/p/abc/"))
     }
 }

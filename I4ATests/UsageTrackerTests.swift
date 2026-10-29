@@ -153,19 +153,19 @@ final class AppSettingsTests: XCTestCase {
     func testDefaults() {
         let settings = AppSettings(defaults: defaults)
         XCTAssertTrue(settings.hideReels)
-        XCTAssertTrue(settings.limitEnabled)
+        XCTAssertFalse(settings.limitEnabled)
         XCTAssertEqual(settings.dailyLimitMinutes, AppSettings.defaultLimitMinutes)
     }
 
     func testPersists() {
         let settings = AppSettings(defaults: defaults)
         settings.hideReels = false
-        settings.limitEnabled = false
+        settings.limitEnabled = true
         settings.dailyLimitMinutes = 60
 
         let reloaded = AppSettings(defaults: defaults)
         XCTAssertFalse(reloaded.hideReels)
-        XCTAssertFalse(reloaded.limitEnabled)
+        XCTAssertTrue(reloaded.limitEnabled)
         XCTAssertEqual(reloaded.dailyLimitMinutes, 60)
     }
 
@@ -181,6 +181,7 @@ final class AppSettingsTests: XCTestCase {
 
     func testLimitReached() {
         let settings = AppSettings(defaults: defaults)
+        settings.limitEnabled = true
         settings.dailyLimitMinutes = 10
         XCTAssertFalse(settings.isLimitReached(usedSeconds: 599))
         XCTAssertTrue(settings.isLimitReached(usedSeconds: 600))

@@ -7,7 +7,8 @@
 #    개인 설정(서명 Team, 번들 ID)을 I4A/Config/Local.xcconfig로 옮겨 둬요.
 # 2. 그 밖에 직접 고친 파일이 있으면 지우지 않고 멈추고, 되돌리는 방법을 알려 줘요.
 # 3. git pull로 최신 코드를 받아요.
-# 4. 개인 설정(Local.xcconfig)이 제대로 있는지 보여 줘요.
+# 4. 개인 설정(Local.xcconfig)이 제대로 있는지 보여 줘요. 관리자 서버 주소가 없으면
+#    물어보고 저장해요.
 
 set -euo pipefail
 
@@ -111,11 +112,27 @@ git pull --ff-only || fail "pull 하지 못했어요. 위의 git 메시지를 �
 # ---------------------------------------------------------------------------
 say "4/4 개인 설정 확인 ($LOCAL)"
 
+# 관리자 서버 주소가 없으면 앱이 관리자 페이지와 연결되지 않아요. 물어보고 저장해요.
+admin_host=$( [ -f "$LOCAL" ] && sed -n 's/^I4A_ADMIN_HOST = *\(.*\)$/\1/p' "$LOCAL" | tail -n 1 || true)
+if [ -z "$admin_host" ] && { exec 3</dev/tty; } 2>/dev/null; then
+  info "관리자 서버 주소가 없어요. 이대로 설치하면 앱이 관리자 페이지와 연결되지 않아요."
+  printf '  관리자 페이지 주소를 붙여 넣고 Enter (없으면 그냥 Enter): '
+  answer=""
+  IFS= read -r answer <&3 || true
+  exec 3<&-
+  answer=$(printf '%s' "$answer" | tr -d '[:space:]' | sed -e 's#^[A-Za-z]*://##' -e 's#/.*$##')
+  [ -n "$answer" ] && set_local I4A_ADMIN_HOST "$answer"
+fi
+
 if [ -f "$LOCAL" ] && grep -q '^[A-Z0-9_]* = ' "$LOCAL"; then
   grep '^[A-Z0-9_]* = ' "$LOCAL" | while IFS= read -r line; do info "$line"; done
 else
   info "아직 없어요. Xcode의 Signing & Capabilities에서 Team을 고르면 다음 업데이트 때 자동으로 옮겨져요."
   info "직접 쓰려면: cp I4A/Config/Local.xcconfig.example $LOCAL 후 값을 고치세요."
+fi
+
+if ! grep -q '^I4A_ADMIN_HOST = [^ ]' "$LOCAL" 2>/dev/null; then
+  info "관리자 서버: 연결 안 됨. 연결하려면 $LOCAL 에 'I4A_ADMIN_HOST = 주소' (https:// 없이)를 넣으세요."
 fi
 
 say "업데이트 완료. Xcode에서 ▶(⌘R)로 다시 설치하세요."

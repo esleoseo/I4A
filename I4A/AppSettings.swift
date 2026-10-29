@@ -76,7 +76,8 @@ final class AppSettings: ObservableObject {
         self.defaults = defaults
         defaults.register(defaults: [
             Keys.hideReels: true,
-            Keys.limitEnabled: true,
+            // Off until the user or the admin turns it on.
+            Keys.limitEnabled: false,
             Keys.dailyLimitMinutes: Self.defaultLimitMinutes,
         ])
         hideReels = defaults.bool(forKey: Keys.hideReels)

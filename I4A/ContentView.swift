@@ -61,6 +61,7 @@ struct ContentView: View {
             SettingsView()
                 .environmentObject(settings)
                 .environmentObject(tracker)
+                .environmentObject(adminSync)
         }
         .onAppear(perform: syncState)
         .onChange(of: isBlocked) { _ in syncState() }
@@ -120,7 +121,7 @@ private struct TopBar: View {
             .alert("Instagram for ADHDs", isPresented: $showAbout) {
                 Button("확인", role: .cancel) {}
             } message: {
-                Text("이레를 위한 은성오빠의 사랑으로 제작됨")
+                Text("이레와 함께하는 은성오빠의 사랑으로 제작됨")
             }
             Spacer(minLength: 6)
             usageLabel

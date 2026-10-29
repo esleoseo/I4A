@@ -15,6 +15,7 @@ struct FloatingTabBar: View {
 
     /// The tab under the finger while it's on the bar.
     @State private var touchedIndex: Int?
+    @State private var barWidth: CGFloat = 0
     @Namespace private var highlight
 
     private var highlightedIndex: Int? {
@@ -22,75 +23,79 @@ struct FloatingTabBar: View {
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            let itemWidth = proxy.size.width / CGFloat(max(tabs.count, 1))
-            HStack(spacing: 0) {
-                ForEach(Array(tabs.enumerated()), id: \.element) { index, tab in
-                    TabIcon(tab: tab, selected: tab == active, collapsed: collapsed, avatarURL: avatarURL)
-                        .frame(width: itemWidth, height: proxy.size.height)
-                        .background {
-                            if index == highlightedIndex {
-                                Capsule()
-                                    .fill(Color.primary.opacity(touchedIndex == nil ? 0.1 : 0.16))
-                                    .padding(.vertical, collapsed ? 3 : 5)
-                                    .padding(.horizontal, 2)
-                                    .scaleEffect(touchedIndex == nil ? 1 : 1.12)
-                                    .matchedGeometryEffect(id: "highlight", in: highlight)
-                            }
+        HStack(spacing: 0) {
+            ForEach(Array(tabs.enumerated()), id: \.element) { index, tab in
+                TabIcon(tab: tab, selected: tab == active, avatarURL: avatarURL)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background {
+                        if index == highlightedIndex {
+                            Capsule()
+                                .fill(Color.primary.opacity(touchedIndex == nil ? 0.16 : 0.24))
+                                .padding(.vertical, 5)
+                                .padding(.horizontal, 2)
+                                .scaleEffect(touchedIndex == nil ? 1 : 1.12)
+                                .matchedGeometryEffect(id: "highlight", in: highlight)
                         }
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(tab.title)
-                        .accessibilityAddTraits(tab == active ? [.isButton, .isSelected] : .isButton)
-                        .accessibilityAction { select(tab) }
-                }
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(tab.title)
+                    .accessibilityAddTraits(tab == active ? [.isButton, .isSelected] : .isButton)
+                    .accessibilityAction { select(tab) }
             }
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        let index = self.index(at: value.location.x, itemWidth: itemWidth)
-                        guard index != touchedIndex else { return }
-                        if touchedIndex == nil {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        } else {
-                            UISelectionFeedbackGenerator().selectionChanged()
-                        }
-                        touchedIndex = index
-                    }
-                    .onEnded { value in
-                        let index = self.index(at: value.location.x, itemWidth: itemWidth)
-                        touchedIndex = nil
-                        // Let go well away from the bar: cancelled.
-                        guard value.location.y > -60, value.location.y < proxy.size.height + 60,
-                              tabs.indices.contains(index) else { return }
-                        select(tabs[index])
-                    }
-            )
         }
-        .frame(height: collapsed ? 46 : 60)
+        .frame(height: 60)
+        .background(GeometryReader { proxy in
+            Color.clear
+                .onAppear { barWidth = proxy.size.width }
+                .onChange(of: proxy.size.width) { barWidth = $0 }
+        })
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    let index = self.index(at: value.location.x)
+                    guard index != touchedIndex else { return }
+                    if touchedIndex == nil {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    } else {
+                        UISelectionFeedbackGenerator().selectionChanged()
+                    }
+                    touchedIndex = index
+                }
+                .onEnded { value in
+                    let index = self.index(at: value.location.x)
+                    touchedIndex = nil
+                    // Let go well away from the bar: cancelled.
+                    guard value.location.y > -60, value.location.y < 120,
+                          tabs.indices.contains(index) else { return }
+                    select(tabs[index])
+                }
+        )
         .padding(.horizontal, 4)
         .liquidGlassCapsule()
-        .padding(.horizontal, collapsed ? 64 : 18)
+        .padding(.horizontal, 18)
+        // Shrinking scales the finished bar instead of laying it out again
+        // at another size, so the icons stay put inside it.
+        .scaleEffect(collapsed ? 0.8 : 1, anchor: .bottom)
         .animation(.spring(response: 0.3, dampingFraction: 0.78), value: highlightedIndex)
         .animation(.spring(response: 0.3, dampingFraction: 0.78), value: touchedIndex == nil)
         .animation(.spring(response: 0.35, dampingFraction: 0.82), value: collapsed)
     }
 
-    private func index(at x: CGFloat, itemWidth: CGFloat) -> Int {
-        guard itemWidth > 0, !tabs.isEmpty else { return 0 }
-        return min(max(Int(x / itemWidth), 0), tabs.count - 1)
+    private func index(at x: CGFloat) -> Int {
+        guard barWidth > 0, !tabs.isEmpty else { return 0 }
+        return min(max(Int(x / (barWidth / CGFloat(tabs.count))), 0), tabs.count - 1)
     }
 }
 
 private struct TabIcon: View {
     let tab: WebTab
     let selected: Bool
-    let collapsed: Bool
     let avatarURL: URL?
 
     var body: some View {
         if tab == .profile, let avatarURL {
-            let size: CGFloat = collapsed ? 22 : 27
+            let size: CGFloat = 27
             AsyncImage(url: avatarURL) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
@@ -103,7 +108,7 @@ private struct TabIcon: View {
             .overlay(Circle().stroke(Color.primary, lineWidth: 1.5).opacity(selected ? 1 : 0))
         } else {
             Image(systemName: tab.icon(selected: selected))
-                .font(.system(size: collapsed ? 19 : 23, weight: selected ? .semibold : .regular))
+                .font(.system(size: 23, weight: selected ? .semibold : .regular))
                 .foregroundColor(.primary)
         }
     }
@@ -129,7 +134,9 @@ extension View {
             // Not `.interactive()`: its touch tracking crashed the app
             // (NSArray nil insert in gesture handling) when the web view
             // underneath was touched.
-            glassEffect(.regular, in: Capsule())
+            // Tinted toward the background, so the icons stay readable over
+            // bright photos.
+            glassEffect(.regular.tint(Color(.systemBackground).opacity(0.35)), in: Capsule())
         } else {
             materialCapsule()
         }

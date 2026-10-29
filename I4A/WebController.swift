@@ -267,16 +267,12 @@ final class WebController: NSObject, ObservableObject {
             WebTab.hidesBar(onPath: path)
         if hides != pageHidesBar { pageHidesBar = hides }
 
-        // Instagram's own items; on pages where it drops its bar but people
-        // still need to get around (the DM inbox), the last ones seen.
-        var shown: [WebTab] = []
-        if let navTabs = pageNavTabs {
-            shown = navTabs
-        } else if WebTab.keepsBarWithoutInstagramNav(onPath: path) {
-            let known = lastKnownTabs.isEmpty ? [.home, .direct, .explore, .profile] : lastKnownTabs
-            shown = known.filter { $0 != .profile || profilePath != nil }
-        }
-        shown.removeAll { hideReels && $0 == .reels }
+        // Instagram's own items, or the last ones seen where it has no bar
+        // (the DM inbox, other pages, and while a page is still being built
+        // after a tap). The bar is the app's, so it stays: only the pages
+        // above and whatever Instagram pins to the bottom put it away.
+        var shown = pageNavTabs ?? (lastKnownTabs.isEmpty ? [.home, .direct, .explore, .profile] : lastKnownTabs)
+        shown.removeAll { ($0 == .profile && profilePath == nil) || (hideReels && $0 == .reels) }
         if shown != tabs { tabs = shown }
     }
 

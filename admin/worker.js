@@ -21,7 +21,7 @@ import { DurableObject } from "cloudflare:workers";
 const DEFAULT_POLICY = {
   locked: false,
   reelsLocked: false,
-  limitEnabled: true,
+  limitEnabled: false,
   dailyLimitMinutes: 30,
   updatedAt: null,
 };

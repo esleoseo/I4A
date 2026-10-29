@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var tracker: UsageTracker
+    @EnvironmentObject private var adminSync: AdminSync
     @Environment(\.dismiss) private var dismiss
 
     /// Once today's limit is reached it can't be raised or switched off until
@@ -73,6 +74,23 @@ struct SettingsView: View {
 
                 Section {
                     HStack {
+                        Text("관리자 서버")
+                        Spacer()
+                        adminStatus
+                    }
+                } footer: {
+                    switch adminSync.status {
+                    case .notConfigured:
+                        Text("이 빌드에는 관리자 서버 주소가 없어요. Mac의 I4A/Config/Local.xcconfig에 I4A_ADMIN_HOST를 https:// 없이 넣고 다시 설치하세요.")
+                    case .failed(let reason):
+                        Text("관리자 서버에 연결하지 못했어요(\(reason)). 주소와 인터넷 연결을 확인하세요. 마지막으로 받은 설정은 계속 적용돼요.")
+                    case .connecting, .connected:
+                        Text("관리자 설정을 20초마다 받아 와요.")
+                    }
+                }
+
+                Section {
+                    HStack {
                         Text("버전")
                         Spacer()
                         Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-")
@@ -91,5 +109,19 @@ struct SettingsView: View {
             }
         }
         .navigationViewStyle(.stack)
+    }
+
+    @ViewBuilder
+    private var adminStatus: some View {
+        switch adminSync.status {
+        case .notConfigured:
+            Text("설정 안 됨").foregroundColor(.secondary)
+        case .connecting:
+            Text("연결 중…").foregroundColor(.secondary)
+        case .connected(let date):
+            Text("연결됨 · \(date.formatted(date: .omitted, time: .shortened))").foregroundColor(.green)
+        case .failed:
+            Text("연결 실패").foregroundColor(.red)
+        }
     }
 }
