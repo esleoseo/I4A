@@ -322,6 +322,12 @@ final class WebController: NSObject, ObservableObject {
             webView?.underPageBackgroundColor = UIColor(cssColor: background)
         }
         pageHasLoginForm = message["login"] as? Bool ?? false
+        if pageHasLoginForm {
+            // Logged out or switching accounts: forget the last account's
+            // profile; the next page with Instagram's bar tells the new one.
+            profilePath = nil
+            profileImageURL = nil
+        }
         pageHasOverlay = message["overlay"] as? Bool ?? false
         updatePageState()
     }
