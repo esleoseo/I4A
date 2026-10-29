@@ -6,27 +6,55 @@ struct ContentView: View {
     @EnvironmentObject private var web: WebController
     @Environment(\.scenePhase) private var scenePhase
     @State private var showSettings = false
+    @State private var showReelNotice = false
+    @State private var noticeToken = 0
 
     private var isBlocked: Bool {
         settings.isLimitReached(usedSeconds: tracker.usedSeconds)
     }
 
+    private var showsTabBar: Bool {
+        !web.tabs.isEmpty && !web.pageHidesBar && web.loadError == nil && !isBlocked
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             TopBar(showSettings: $showSettings)
-            Divider()
-            ZStack {
+            ZStack(alignment: .bottom) {
+                // Runs under the home indicator: no dead strip at the bottom.
                 InstagramWebView(webView: web.webView)
+                    .ignoresSafeArea(.container, edges: .bottom)
+                if showsTabBar {
+                    FloatingTabBar(
+                        tabs: web.tabs,
+                        active: web.activeTab,
+                        collapsed: web.isBarCollapsed,
+                        select: web.select
+                    )
+                    .padding(.bottom, web.isBarCollapsed ? 0 : 4)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                if showReelNotice {
+                    ReelNotice()
+                        .padding(.bottom, showsTabBar ? 84 : 24)
+                        .transition(.opacity)
+                }
                 if let message = web.loadError, !isBlocked {
                     LoadErrorView(message: message, retry: web.retry)
+                        .ignoresSafeArea(.container, edges: .bottom)
                 }
                 if isBlocked {
                     LimitReachedView(showSettings: $showSettings)
+                        .ignoresSafeArea(.container, edges: .bottom)
                         .transition(.opacity)
                 }
             }
         }
+        // The keyboard covers the bar instead of pushing it up.
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .animation(.easeInOut(duration: 0.25), value: isBlocked)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showsTabBar)
+        .animation(.easeInOut(duration: 0.2), value: showReelNotice)
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environmentObject(settings)
@@ -41,6 +69,14 @@ struct ContentView: View {
         }
         .onChange(of: settings.hideReels) { hide in
             web.setHideReels(hide)
+        }
+        .onChange(of: web.blockedReelCount) { _ in
+            showReelNotice = true
+            noticeToken += 1
+            let token = noticeToken
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                if token == noticeToken { showReelNotice = false }
+            }
         }
     }
 
@@ -58,23 +94,27 @@ private struct TopBar: View {
     @Binding var showSettings: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Text("I4A")
-                .font(.system(.headline, design: .rounded).weight(.heavy))
-            Spacer(minLength: 8)
+                .font(.system(size: 13, weight: .heavy, design: .rounded))
+                .foregroundColor(.secondary)
+            Spacer(minLength: 6)
             usageLabel
             Button {
                 showSettings = true
             } label: {
                 Image(systemName: "gearshape")
-                    .font(.system(size: 17, weight: .semibold))
-                    .frame(width: 32, height: 32)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    // Small to look at, still a comfortable target.
+                    .frame(width: 36, height: 26)
                     .contentShape(Rectangle())
             }
             .accessibilityLabel("설정")
         }
-        .padding(.horizontal, 12)
-        .frame(height: 40)
+        .padding(.leading, 12)
+        .padding(.trailing, 4)
+        .frame(height: 26)
         .background(Color(.systemBackground))
     }
 
@@ -83,14 +123,14 @@ private struct TopBar: View {
         if settings.limitEnabled {
             let remaining = settings.remainingSeconds(usedSeconds: tracker.usedSeconds)
             Text("남은 시간 \(TimeFormat.short(remaining))")
-                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .font(.caption.weight(.semibold).monospacedDigit())
                 .foregroundColor(remaining <= 60 ? .red : (remaining <= 300 ? .orange : .secondary))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
                 .background(Capsule().fill(Color(.secondarySystemBackground)))
         } else {
             Text("오늘 \(TimeFormat.short(tracker.usedSeconds)) 사용")
-                .font(.subheadline.monospacedDigit())
+                .font(.caption.monospacedDigit())
                 .foregroundColor(.secondary)
         }
     }

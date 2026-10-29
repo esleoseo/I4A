@@ -6,12 +6,29 @@ import WebKit
 final class WebController: NSObject, ObservableObject {
     /// Message for the error overlay when the page couldn't load.
     @Published private(set) var loadError: String?
+    /// Items of Instagram's own bottom bar; empty when the page has none.
+    @Published private(set) var tabs: [WebTab] = []
+    @Published private(set) var activeTab: WebTab?
+    /// The page needs the bottom of the screen (DM thread, login form, ...).
+    @Published private(set) var pageHidesBar = false
+    /// The user is scrolling down through content: shrink the bar.
+    @Published private(set) var isBarCollapsed = false
+    /// Bumped whenever a Reel was stopped from playing, to show a notice.
+    @Published private(set) var blockedReelCount = 0
 
     let webView: WKWebView
 
     private let userContentController: WKUserContentController
     private let refreshControl = UIRefreshControl()
     private var urlObservation: NSKeyValueObservation?
+    private var scrollObservation: NSKeyValueObservation?
+    private var lastScrollY: CGFloat = 0
+    private var scrollTravel: CGFloat = 0
+    private var pageHasLoginForm = false
+    private static let profilePathKey = "web.profilePath"
+    private var profilePath: String? = UserDefaults.standard.string(forKey: WebController.profilePathKey) {
+        didSet { UserDefaults.standard.set(profilePath, forKey: Self.profilePathKey) }
+    }
     private var hideReels: Bool
     private var isSuspended = false
     private var needsReload = false
@@ -25,6 +42,8 @@ final class WebController: NSObject, ObservableObject {
         let contentController = WKUserContentController()
         contentController.addUserScript(ContentScripts.userScript(hideReels: hideReels))
         userContentController = contentController
+        let messageProxy = MessageProxy()
+        contentController.add(messageProxy, contentWorld: ContentScripts.world, name: ContentScripts.messageHandlerName)
 
         let config = WKWebViewConfiguration()
         config.userContentController = contentController
@@ -40,6 +59,7 @@ final class WebController: NSObject, ObservableObject {
 
         webView = WKWebView(frame: .zero, configuration: config)
         super.init()
+        messageProxy.target = self
 
         webView.navigationDelegate = self
         webView.uiDelegate = self
@@ -60,12 +80,18 @@ final class WebController: NSObject, ObservableObject {
         urlObservation = webView.observe(\.url, options: [.new]) { [weak self] webView, _ in
             DispatchQueue.main.async { self?.urlDidChange(webView.url) }
         }
+        scrollObservation = webView.scrollView.observe(\.contentOffset, options: [.new]) { [weak self] scrollView, _ in
+            self?.scrollDidChange(scrollView)
+        }
 
         webView.load(URLRequest(url: NavigationPolicy.homeURL))
     }
 
     deinit {
         urlObservation?.invalidate()
+        scrollObservation?.invalidate()
+        userContentController.removeScriptMessageHandler(
+            forName: ContentScripts.messageHandlerName, contentWorld: ContentScripts.world)
     }
 
     // MARK: - Commands
@@ -101,6 +127,25 @@ final class WebController: NSObject, ObservableObject {
     func appDidBecomeActive() {
         if webView.url == nil && !webView.isLoading && !isSuspended {
             reload()
+        }
+    }
+
+    /// Bottom bar tap. Taps Instagram's own (hidden) bar item so the page
+    /// navigates as usual; tapping the current tab scrolls back to the top.
+    func select(_ tab: WebTab) {
+        setBarCollapsed(false)
+        if tab == activeTab, tab != .create {
+            webView.scrollView.setContentOffset(
+                CGPoint(x: 0, y: -webView.scrollView.adjustedContentInset.top), animated: true)
+            evaluate(ContentScripts.scrollToTopJS)
+            return
+        }
+        webView.evaluateJavaScript(ContentScripts.tapJS(tab.rawValue), in: nil, in: ContentScripts.world) { [weak self] result in
+            guard let self else { return }
+            if case .success(let value) = result, value as? Bool == true { return }
+            guard let path = tab.fallbackPath(profilePath: self.profilePath),
+                  let url = URL(string: path, relativeTo: NavigationPolicy.homeURL) else { return }
+            self.webView.load(URLRequest(url: url))
         }
     }
 
@@ -142,9 +187,62 @@ final class WebController: NSObject, ObservableObject {
     }
 
     private func urlDidChange(_ url: URL?) {
-        evaluate(ContentScripts.ensureJS)
+        evaluate(ContentScripts.refreshJS)
+        updatePageState()
+        setBarCollapsed(false)
         guard hideReels, NavigationPolicy.isReels(url) else { return }
         leaveReels()
+    }
+
+    private func updatePageState() {
+        let path = webView.url.flatMap { NavigationPolicy.isInstagramHost($0.host) ? $0.path : nil } ?? ""
+        let active = WebTab.active(forPath: path, profilePath: profilePath)
+        if active != activeTab { activeTab = active }
+        let hides = path.isEmpty || pageHasLoginForm || WebTab.hidesBar(onPath: path)
+        if hides != pageHidesBar { pageHidesBar = hides }
+    }
+
+    fileprivate func receive(_ body: Any) {
+        guard let message = body as? [String: Any] else { return }
+        if message["blockedReel"] as? Bool == true {
+            blockedReelCount += 1
+            return
+        }
+        if let path = message["profile"] as? String, path.hasPrefix("/"), path != profilePath {
+            profilePath = path
+        }
+        let hasNav = message["nav"] as? Bool ?? false
+        let kinds = (message["kinds"] as? [String] ?? []).compactMap(WebTab.init(rawValue:))
+        let order = WebTab.allCases.filter { kinds.contains($0) && !(hideReels && $0 == .reels) }
+        let newTabs = hasNav ? order : []
+        if newTabs != tabs { tabs = newTabs }
+        pageHasLoginForm = message["login"] as? Bool ?? false
+        updatePageState()
+    }
+
+    /// Shrinks the bar after a deliberate scroll down, restores it on any
+    /// scroll up or near the top, like Instagram's app.
+    private func scrollDidChange(_ scrollView: UIScrollView) {
+        let y = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
+        let delta = y - lastScrollY
+        lastScrollY = y
+        guard scrollView.isTracking || scrollView.isDragging || scrollView.isDecelerating else { return }
+        if y < 40 {
+            scrollTravel = 0
+            setBarCollapsed(false)
+            return
+        }
+        if (delta > 0) != (scrollTravel > 0) { scrollTravel = 0 }
+        scrollTravel += delta
+        if scrollTravel > 30 {
+            setBarCollapsed(true)
+        } else if scrollTravel < -20 {
+            setBarCollapsed(false)
+        }
+    }
+
+    private func setBarCollapsed(_ collapsed: Bool) {
+        if collapsed != isBarCollapsed { isBarCollapsed = collapsed }
     }
 
     /// Steps back from a Reels page, or goes home if there's nowhere to go back to.
@@ -239,7 +337,7 @@ extension WebController: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         endRefreshing()
-        evaluate(ContentScripts.ensureJS)
+        evaluate(ContentScripts.refreshJS)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -348,6 +446,18 @@ private final class DialogReply<Value> {
 
     deinit {
         send(fallback)
+    }
+}
+
+// MARK: - Script messages
+
+/// WKUserContentController retains its handlers; this proxy keeps that from
+/// becoming a retain cycle with WebController.
+private final class MessageProxy: NSObject, WKScriptMessageHandler {
+    weak var target: WebController?
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        target?.receive(message.body)
     }
 }
 
