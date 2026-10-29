@@ -521,7 +521,7 @@ struct InstagramWebView: UIViewRepresentable {
     let webView: WKWebView
 
     func makeUIView(context: Context) -> UIView {
-        let container = UIView()
+        let container = WebViewContainer()
         container.backgroundColor = .clear
         attach(to: container)
         return container
@@ -536,5 +536,27 @@ struct InstagramWebView: UIViewRepresentable {
         webView.frame = container.bounds
         webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         container.addSubview(webView)
+    }
+}
+
+/// Turns off touch delaying on every scroll view a touch lands in, right
+/// before UIKit hands the touch to their gesture recognizers.
+///
+/// A scroll view's delayed-touches recognizer crashed the app on touch
+/// (NSArray nil insert in -[UIGestureRecognizer _delayTouchesForEvent:inPhase:]).
+/// Besides its main scroll view, the web view creates more of them on the fly
+/// for each scrollable area of the page (WKChildScrollView), so they're
+/// handled where the touch is, at hit-testing time, not once up front.
+final class WebViewContainer: UIView {
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let hit = super.hitTest(point, with: event)
+        var view = hit
+        while let current = view, current !== self {
+            if let scrollView = current as? UIScrollView, scrollView.delaysContentTouches {
+                scrollView.delaysContentTouches = false
+            }
+            view = current.superview
+        }
+        return hit
     }
 }
