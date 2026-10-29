@@ -60,6 +60,7 @@ enum WebTab: String, CaseIterable, Identifiable {
 
     /// Pages that use the bottom of the screen themselves (message composer,
     /// story viewer, post editor, login and settings forms).
+    /// The page script's NO_BAR (ContentScripts) mirrors this list.
     static func hidesBar(onPath path: String) -> Bool {
         let prefixes = ["/direct/t/", "/stories/", "/create/", "/accounts/", "/challenge/"]
         return prefixes.contains { path.hasPrefix($0) }

@@ -78,6 +78,9 @@ enum ContentScripts {
 
           var STYLE_ID = 'i4a-style';
           var CSS = \(jsStringLiteral(css));
+          // Pages where the app hides its bar whatever the page shows
+          // (WebTab.hidesBar); keep the two in step.
+          var NO_BAR = /^\\/(direct\\/t|stories|create|accounts|challenge)\\//;
           var RESERVED = /^\\/(explore|reels?|direct|accounts|stories|p|tv|about|legal|create|notifications|your_activity|emails|challenge|web|session|privacy|settings|developer|api|graphql|ajax)\\//;
 
           var nav = null;
@@ -330,6 +333,9 @@ enum ContentScripts {
           function onMedia(event) {
             var video = event.target;
             if (!video || video.tagName !== 'VIDEO' || video.paused) { return; }
+            // The Reel let through keeps firing timeupdate while it plays;
+            // it needn't be measured again each time.
+            if (grant && grant.video === video && grant.src === srcOf(video)) { return; }
             var reel = (hide && video.hasAttribute('data-i4a-blocked')) || isReelPlayer(video);
             if (reel && !isGranted(video)) { stopReel(video); }
           }
@@ -436,7 +442,8 @@ enum ContentScripts {
             state.nav = !!nav;
             state.login = !!document.querySelector('input[type="password"]');
             // Instagram's sheets and viewers sit where the native bar is.
-            state.overlay = hasOverlay();
+            // Where that bar is hidden anyway, skip measuring the page.
+            state.overlay = !NO_BAR.test(location.pathname) && hasOverlay();
             state.navShown = document.documentElement.hasAttribute('data-i4a-show-nav');
             var serialized = JSON.stringify(state);
             if (serialized !== lastReport) {
