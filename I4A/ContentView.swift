@@ -69,7 +69,6 @@ struct ContentView: View {
             SettingsView()
                 .environmentObject(settings)
                 .environmentObject(tracker)
-                .environmentObject(adminSync)
         }
         .onAppear(perform: syncState)
         .onChange(of: isBlocked) { _ in syncState() }

@@ -17,19 +17,6 @@ enum AdminConfig {
 final class AdminSync: ObservableObject {
     static let pollInterval: TimeInterval = 20
 
-    enum Status: Equatable {
-        /// No admin server host in the build (I4A_ADMIN_HOST).
-        case notConfigured
-        case connecting
-        /// The last policy fetch succeeded, at this time.
-        case connected(Date)
-        /// The last fetch failed: offline, wrong host, or a bad answer.
-        case failed(String)
-    }
-
-    /// Shown in Settings, so a lock that doesn't arrive can be traced.
-    @Published private(set) var status: Status
-
     private let settings: AppSettings
     private let tracker: UsageTracker
     private let session: URLSession
@@ -43,7 +30,6 @@ final class AdminSync: ObservableObject {
         config.timeoutIntervalForRequest = 10
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         session = URLSession(configuration: config)
-        status = AdminConfig.baseURL == nil ? .notConfigured : .connecting
     }
 
     deinit {
@@ -77,30 +63,16 @@ final class AdminSync: ObservableObject {
     private func fetchPolicy() {
         guard !isFetching, let url = AdminConfig.baseURL?.appendingPathComponent("api/policy") else { return }
         isFetching = true
-        session.dataTask(with: url) { [weak self] data, response, error in
-            let code = (response as? HTTPURLResponse)?.statusCode
+        session.dataTask(with: url) { [weak self] data, response, _ in
             let policy = data.flatMap { data -> AdminPolicy? in
-                guard code == 200 else { return nil }
+                guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
                 return try? JSONDecoder().decode(AdminPolicy.self, from: data)
-            }
-            let failure: String
-            if let error {
-                failure = error.localizedDescription
-            } else if let code, code != 200 {
-                failure = "서버 응답 \(code)"
-            } else {
-                failure = "알 수 없는 응답"
             }
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.isFetching = false
                 // Offline or a bad answer: keep the last known policy.
-                if let policy {
-                    self.settings.apply(policy)
-                    self.status = .connected(Date())
-                } else {
-                    self.status = .failed(failure)
-                }
+                if let policy { self.settings.apply(policy) }
             }
         }.resume()
     }
