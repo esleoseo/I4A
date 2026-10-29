@@ -1,10 +1,10 @@
 import Foundation
 
 /// An item of the native bottom bar. Listed in the order of Instagram's iOS
-/// app bar (Home, Reels, Messages, Search, Profile). `create` is a web bar
-/// item only: the app's bar has no "new post" button, so neither has ours.
+/// app bar (Home, Reels, Messages, Search, Profile), which has no "new
+/// post" button.
 enum WebTab: String, CaseIterable, Identifiable {
-    case home, reels, direct, explore, profile, create
+    case home, reels, direct, explore, profile
 
     var id: String { rawValue }
 
@@ -13,7 +13,6 @@ enum WebTab: String, CaseIterable, Identifiable {
         case .home: return "홈"
         case .explore: return "검색"
         case .reels: return "릴스"
-        case .create: return "만들기"
         case .direct: return "메시지"
         case .profile: return "프로필"
         }
@@ -24,7 +23,6 @@ enum WebTab: String, CaseIterable, Identifiable {
         case .home: return selected ? "house.fill" : "house"
         case .explore: return "magnifyingglass"
         case .reels: return selected ? "play.rectangle.fill" : "play.rectangle"
-        case .create: return "plus.app"
         case .direct: return selected ? "paperplane.fill" : "paperplane"
         case .profile: return selected ? "person.crop.circle.fill" : "person.crop.circle"
         }
@@ -38,7 +36,6 @@ enum WebTab: String, CaseIterable, Identifiable {
         case .reels: return "/reels/"
         case .direct: return "/direct/inbox/"
         case .profile: return profilePath
-        case .create: return nil
         }
     }
 

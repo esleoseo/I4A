@@ -16,8 +16,6 @@ enum ContentScripts {
     /// - `data-i4a-reels` on <html>: Reels hiding is on.
     /// - `data-i4a-feed` on <html>: the home feed is showing.
     /// - `data-i4a-nav`: Instagram's own bottom bar, replaced by the native one.
-    /// - `data-i4a-show-nav` on <html>: Instagram's bar is shown for a moment
-    ///   (its "new post" button was used; what it opens is anchored to it).
     /// - `data-i4a-blocked`: a Reel's <video>, kept hidden and paused.
     /// - `data-i4a-reel-tile`: an Explore grid tile that is a Reel although
     ///   it links to `/p/`. Hidden but kept in place, so the grid doesn't move.
@@ -34,7 +32,7 @@ enum ContentScripts {
     html[data-i4a-reels] div:has(> a[href="/reels/"]:only-child),
     html[data-i4a-reels] li:has(> a[href="/reels/"]:only-child),
     html[data-i4a-reels][data-i4a-feed] article:has(a[href*="/reel/"]:not([href*="/explore/"])),
-    html:not([data-i4a-show-nav]) [data-i4a-nav] {
+    [data-i4a-nav] {
         display: none !important;
     }
     html[data-i4a-reels] video[data-i4a-blocked] {
@@ -190,9 +188,7 @@ enum ContentScripts {
 
           function kindOf(el) {
             var href = el.getAttribute('href');
-            if (href === null || href === '' || href === '#') {
-              return el.tagName === 'A' || !el.querySelector('a[href]') ? 'create' : null;
-            }
+            if (href === null || href === '' || href === '#') { return null; }
             if (href === '/' || href.indexOf('/?') === 0) { return 'home'; }
             if (href.indexOf('/explore') === 0) { return 'explore'; }
             if (href.indexOf('/reels') === 0) { return 'reels'; }
@@ -482,60 +478,11 @@ enum ContentScripts {
             // Instagram's sheets and viewers sit where the native bar is.
             // Where that bar is hidden anyway, skip measuring the page.
             state.overlay = !NO_BAR.test(location.pathname) && hasOverlay();
-            state.navShown = document.documentElement.hasAttribute('data-i4a-show-nav');
             var serialized = JSON.stringify(state);
             if (serialized !== lastReport) {
               lastReport = serialized;
               post(state);
             }
-          }
-
-          // Instagram's "new post" button opens a menu or the photo picker that
-          // belongs to its own bar, and the picker only opens for a real tap.
-          // So show its bar for a while: whatever opens is visible, and if
-          // nothing opened, its + is right there to tap directly.
-          var showNavUntil = 0;
-          // Hiding it again while its menu or picker is still in use would
-          // hide those with it (and leave a file picker with nowhere to
-          // anchor), so it stays until the page changes, or until a while
-          // has passed with nothing of it open.
-          var SHOW_NAV_FOR = 30000;
-          var showNavPath = null;
-
-          function showInstagramNav() {
-            showNavUntil = Date.now() + SHOW_NAV_FOR;
-            showNavPath = location.pathname;
-            setFlag('data-i4a-show-nav', true);
-            setTimeout(refresh, SHOW_NAV_FOR + 50);
-          }
-
-          // Any menu, sheet or dialog on screen, including ones inside the bar.
-          function hasPopup() {
-            var popups = document.querySelectorAll('[role="dialog"], [aria-modal="true"], [role="menu"], [role="listbox"]');
-            for (var i = 0; i < popups.length; i++) {
-              var rect = popups[i].getBoundingClientRect();
-              if (rect.width > 0 && rect.height > 0 && getComputedStyle(popups[i]).visibility !== 'hidden') { return true; }
-            }
-            return false;
-          }
-
-          function updateShownNav() {
-            if (!document.documentElement.hasAttribute('data-i4a-show-nav')) { return; }
-            var pageChanged = location.pathname !== showNavPath;
-            if (!pageChanged && (Date.now() < showNavUntil || hasPopup())) { return; }
-            setFlag('data-i4a-show-nav', false);
-          }
-
-          // The element that actually handles "new post": the one carrying its
-          // label, rather than a wrapper around it.
-          function createButton(item) {
-            var labelled = item.querySelectorAll('[aria-label]');
-            for (var i = 0; i < labelled.length; i++) {
-              if (/새로운 게시물|새 게시물|만들기|new post|create/i.test(labelled[i].getAttribute('aria-label') || '')) {
-                return labelled[i].closest('a, button, [role="button"], [role="link"]') || labelled[i];
-              }
-            }
-            return item;
           }
 
           // The native bar shrinks after a deliberate scroll down and grows
@@ -580,7 +527,6 @@ enum ContentScripts {
           function refresh() {
             if (!ensureStyle()) { return; }
             resetScrollOnNewPage();
-            updateShownNav();
             findNav();
             guardBlankPage();
             improveLogin();
@@ -604,10 +550,6 @@ enum ContentScripts {
               collectNavItems();
               var el = items[kind];
               if (!el || !el.isConnected) { return false; }
-              if (kind === 'create') {
-                showInstagramNav();
-                el = createButton(el);
-              }
               clickAs(el);
               report();
               return true;

@@ -27,7 +27,6 @@ final class WebTabTests: XCTestCase {
         XCTAssertEqual(WebTab.direct.fallbackPath(profilePath: nil), "/direct/inbox/")
         XCTAssertEqual(WebTab.profile.fallbackPath(profilePath: "/me/"), "/me/")
         XCTAssertNil(WebTab.profile.fallbackPath(profilePath: nil))
-        XCTAssertNil(WebTab.create.fallbackPath(profilePath: "/me/"))
     }
 
     func testBarStaysWhereInstagramDropsItsOwn() {

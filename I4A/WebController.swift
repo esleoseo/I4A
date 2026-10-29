@@ -30,8 +30,6 @@ final class WebController: NSObject, ObservableObject {
     private var pageNavTabs: [WebTab]?
     /// The bar as last seen, for pages where Instagram drops it (DM inbox).
     private var lastKnownTabs: [WebTab] = []
-    /// Instagram's own bar is briefly shown (its "new post" button was used).
-    private var pageShowsInstagramNav = false
     private static let profilePathKey = "web.profilePath"
     private var profilePath: String? = UserDefaults.standard.string(forKey: WebController.profilePathKey) {
         didSet { UserDefaults.standard.set(profilePath, forKey: Self.profilePathKey) }
@@ -192,7 +190,7 @@ final class WebController: NSObject, ObservableObject {
     func select(_ tab: WebTab) {
         guard let webView else { return }
         setBarCollapsed(false)
-        if tab == activeTab, tab != .create {
+        if tab == activeTab {
             // Like Instagram's app: tapping the current tab scrolls back to
             // the top; tapping Home again once there refreshes the feed.
             if tab == .home && webView.scrollView.contentOffset.y <= 1 {
@@ -265,7 +263,7 @@ final class WebController: NSObject, ObservableObject {
         let path = webView?.url.flatMap { NavigationPolicy.isInstagramHost($0.host) ? $0.path : nil } ?? ""
         let active = WebTab.active(forPath: path, profilePath: profilePath)
         if active != activeTab { activeTab = active }
-        let hides = path.isEmpty || pageHasLoginForm || pageHasOverlay || pageShowsInstagramNav ||
+        let hides = path.isEmpty || pageHasLoginForm || pageHasOverlay ||
             WebTab.hidesBar(onPath: path)
         if hides != pageHidesBar { pageHidesBar = hides }
 
@@ -278,8 +276,7 @@ final class WebController: NSObject, ObservableObject {
             let known = lastKnownTabs.isEmpty ? [.home, .direct, .explore, .profile] : lastKnownTabs
             shown = known.filter { $0 != .profile || profilePath != nil }
         }
-        // Like Instagram's app bar: no "new post" button.
-        shown.removeAll { $0 == .create || (hideReels && $0 == .reels) }
+        shown.removeAll { hideReels && $0 == .reels }
         if shown != tabs { tabs = shown }
     }
 
@@ -313,7 +310,6 @@ final class WebController: NSObject, ObservableObject {
         if hasNav && !order.isEmpty { lastKnownTabs = order }
         pageHasLoginForm = message["login"] as? Bool ?? false
         pageHasOverlay = message["overlay"] as? Bool ?? false
-        pageShowsInstagramNav = message["navShown"] as? Bool ?? false
         updatePageState()
     }
 
