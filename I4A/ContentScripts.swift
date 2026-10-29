@@ -234,7 +234,8 @@ enum ContentScripts {
           }
 
           function improveLogin() {
-            if (location.pathname.indexOf('signup') !== -1) { return; }
+            // Logged in (Instagram's bar is there): no login form to help with.
+            if (nav || location.pathname.indexOf('signup') !== -1) { return; }
             setAutocomplete('input[name="username"], input[name="email"]', 'username');
             setAutocomplete('input[name="password"], input[name="pass"]', 'current-password');
             setAutocomplete('input[name="verificationCode"], input[name="security_code"], input[name="approvals_code"]', 'one-time-code');
@@ -472,6 +473,19 @@ enum ContentScripts {
             return parts.length > 3 ? parseFloat(parts[3]) : 1;
           }
 
+          // Header and background change with the page, not with every update
+          // of it: measure them on a new page and then at most every 2 s, so
+          // the page isn't laid out an extra time while it loads or scrolls.
+          var pageTop = 0, pageBg = null, measuredPath = null, measuredAt = 0;
+          function measurePage() {
+            var now = Date.now();
+            if (location.pathname === measuredPath && now - measuredAt < 2000) { return; }
+            measuredPath = location.pathname;
+            measuredAt = now;
+            pageTop = headerBottom();
+            pageBg = pageBackground();
+          }
+
           // Bottom of the header pinned to the top of the page, if any: where
           // the gap opens when the page is pulled down to refresh.
           function headerBottom() {
@@ -504,8 +518,9 @@ enum ContentScripts {
             var state = collectNavItems();
             state.nav = !!nav;
             state.login = !!document.querySelector('input[type="password"]');
-            state.top = headerBottom();
-            state.bg = pageBackground();
+            measurePage();
+            state.top = pageTop;
+            state.bg = pageBg;
             // Instagram's sheets and viewers sit where the native bar is.
             // Where that bar is hidden anyway, skip measuring the page.
             state.overlay = !NO_BAR.test(location.pathname) && hasOverlay();

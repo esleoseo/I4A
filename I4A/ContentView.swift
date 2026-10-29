@@ -2,7 +2,10 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var tracker: UsageTracker
+    /// Not observed: it ticks every second, and only the top bar's label and
+    /// LimitWatcher need that. This view hears about the limit through
+    /// `isBlocked`, which changes only when the limit is reached or lifted.
+    let tracker: UsageTracker
     @EnvironmentObject private var web: WebController
     @EnvironmentObject private var adminSync: AdminSync
     @Environment(\.scenePhase) private var scenePhase
@@ -10,9 +13,11 @@ struct ContentView: View {
     @State private var showAbout = false
     @State private var showReelNotice = false
     @State private var noticeToken = 0
+    @State private var isBlocked: Bool
 
-    private var isBlocked: Bool {
-        settings.isLimitReached(usedSeconds: tracker.usedSeconds)
+    init(tracker: UsageTracker, initiallyBlocked: Bool) {
+        self.tracker = tracker
+        _isBlocked = State(initialValue: initiallyBlocked)
     }
 
     private var showsTabBar: Bool {
@@ -70,6 +75,7 @@ struct ContentView: View {
                 .environmentObject(settings)
                 .environmentObject(tracker)
         }
+        .background(LimitWatcher(isBlocked: $isBlocked))
         .onAppear(perform: syncState)
         .onChange(of: isBlocked) { _ in syncState() }
         .onChange(of: showSettings) { _ in syncState() }
@@ -104,6 +110,21 @@ struct ContentView: View {
         if showSettings { web.pauseMedia() }
         tracker.update(active: active, counting: !isBlocked && !showSettings)
         adminSync.setActive(active)
+    }
+}
+
+/// Follows the usage clock so ContentView doesn't have to, and passes on
+/// only whether the limit is reached.
+private struct LimitWatcher: View {
+    @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var tracker: UsageTracker
+    @Binding var isBlocked: Bool
+
+    var body: some View {
+        let blocked = settings.isLimitReached(usedSeconds: tracker.usedSeconds)
+        Color.clear
+            .onAppear { if isBlocked != blocked { isBlocked = blocked } }
+            .onChange(of: blocked) { isBlocked = $0 }
     }
 }
 
