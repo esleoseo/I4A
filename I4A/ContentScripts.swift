@@ -233,6 +233,15 @@ enum ContentScripts {
             }
           }
 
+          // Instagram marks its photos to load only once they're about to
+          // scroll into view, so scrolling on shows blank tiles that fill in
+          // late. Load the ones already on the page right away instead (it
+          // keeps only the posts near the screen on the page anyway).
+          function loadImagesEarly() {
+            var lazy = document.querySelectorAll('img[loading="lazy"]');
+            for (var i = 0; i < lazy.length; i++) { lazy[i].setAttribute('loading', 'eager'); }
+          }
+
           function improveLogin() {
             // Logged in (Instagram's bar is there): no login form to help with.
             if (nav || location.pathname.indexOf('signup') !== -1) { return; }
@@ -576,6 +585,7 @@ enum ContentScripts {
             findNav();
             guardBlankPage();
             improveLogin();
+            loadImagesEarly();
             releaseVideos();
             hideReelTiles();
             report();
