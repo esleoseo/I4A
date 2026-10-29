@@ -10,6 +10,10 @@ struct ContentView: View {
     @State private var showReelNotice = false
     @State private var noticeToken = 0
     @State private var showInstagramAlert = false
+    /// Launched or back from the background since the last check. Brief
+    /// inactive spells (permission prompts, the photo picker, Control
+    /// Center) don't count.
+    @State private var isFreshlyOpened = true
 
     private var isBlocked: Bool {
         settings.isLimitReached(usedSeconds: tracker.usedSeconds)
@@ -71,8 +75,16 @@ struct ContentView: View {
             case .active:
                 web.appDidBecomeActive()
                 InstagramApp.appDidBecomeActive()
-                if InstagramApp.isInstalled { showInstagramAlert = true }
+                if isFreshlyOpened {
+                    isFreshlyOpened = false
+                    // Never on top of something already showing, e.g. the
+                    // picker Instagram opens to add a story.
+                    if InstagramApp.isInstalled && !InstagramApp.isShowingSomethingOverApp {
+                        showInstagramAlert = true
+                    }
+                }
             case .background:
+                isFreshlyOpened = true
                 InstagramApp.appDidEnterBackground()
             default:
                 break

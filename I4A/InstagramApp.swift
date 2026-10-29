@@ -25,6 +25,15 @@ enum InstagramApp {
         return UIApplication.shared.canOpenURL(url)
     }
 
+    /// A photo picker, camera, share sheet or other screen is presented
+    /// over the app.
+    static var isShowingSomethingOverApp: Bool {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .contains { $0.isKeyWindow && $0.rootViewController?.presentedViewController != nil }
+    }
+
     static func requestNotificationPermission() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }

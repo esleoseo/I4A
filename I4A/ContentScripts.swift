@@ -397,18 +397,34 @@ enum ContentScripts {
           // So show its bar for a while: whatever opens is visible, and if
           // nothing opened, its + is right there to tap directly.
           var showNavUntil = 0;
-          var SHOW_NAV_FOR = 5000;
+          // Hiding it again while its menu or picker is still in use would
+          // hide those with it (and leave a file picker with nowhere to
+          // anchor), so it stays until the page changes, or until a while
+          // has passed with nothing of it open.
+          var SHOW_NAV_FOR = 30000;
+          var showNavPath = null;
 
           function showInstagramNav() {
             showNavUntil = Date.now() + SHOW_NAV_FOR;
+            showNavPath = location.pathname;
             setFlag('data-i4a-show-nav', true);
             setTimeout(refresh, SHOW_NAV_FOR + 50);
           }
 
+          // Any menu, sheet or dialog on screen, including ones inside the bar.
+          function hasPopup() {
+            var popups = document.querySelectorAll('[role="dialog"], [aria-modal="true"], [role="menu"], [role="listbox"]');
+            for (var i = 0; i < popups.length; i++) {
+              var rect = popups[i].getBoundingClientRect();
+              if (rect.width > 0 && rect.height > 0 && getComputedStyle(popups[i]).visibility !== 'hidden') { return true; }
+            }
+            return false;
+          }
+
           function updateShownNav() {
             if (!document.documentElement.hasAttribute('data-i4a-show-nav')) { return; }
-            // Keep it while something it opened is still on screen.
-            if (Date.now() < showNavUntil || hasOverlay()) { return; }
+            var pageChanged = location.pathname !== showNavPath;
+            if (!pageChanged && (Date.now() < showNavUntil || hasPopup())) { return; }
             setFlag('data-i4a-show-nav', false);
           }
 
