@@ -190,7 +190,7 @@ enum ContentScripts {
             if (path.indexOf('/stories/') === 0) { return false; }
             var inContext = path.indexOf('/direct/') === 0 ||
               !!video.closest('[role="dialog"], [aria-modal="true"]');
-            if (!inContext && /^\/p\//.test(path)) {
+            if (!inContext && /^\\/p\\//.test(path)) {
               var link = document.querySelector('link[rel="canonical"], meta[property="og:url"]');
               var url = link ? (link.getAttribute('href') || link.getAttribute('content') || '') : '';
               inContext = url.indexOf('/reel/') !== -1;
