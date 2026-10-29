@@ -41,7 +41,7 @@ enum WebTab: String, CaseIterable, Identifiable {
 
     /// The tab a page belongs to, for highlighting.
     static func active(forPath path: String, profilePath: String?) -> WebTab? {
-        let path = path.isEmpty ? "/" : path
+        let path = path.hasSuffix("/") ? path : path + "/"
         if path == "/" { return .home }
         if path.hasPrefix("/explore") { return .explore }
         if path.hasPrefix("/reels") { return .reels }
@@ -56,6 +56,6 @@ enum WebTab: String, CaseIterable, Identifiable {
     /// The page script's NO_BAR (ContentScripts) mirrors the prefixes.
     static func hidesBar(onPath path: String) -> Bool {
         let prefixes = ["/direct/t/", "/stories/", "/create/", "/accounts/", "/challenge/"]
-        return prefixes.contains { path.hasPrefix($0) } || path.hasSuffix("/comments/")
+        return prefixes.contains { path.hasPrefix($0) } || path.hasSuffix("/comments/") || path.hasSuffix("/comments")
     }
 }

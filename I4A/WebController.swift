@@ -260,7 +260,12 @@ final class WebController: NSObject, ObservableObject {
     }
 
     private func updatePageState() {
-        let path = webView?.url.flatMap { NavigationPolicy.isInstagramHost($0.host) ? $0.path : nil } ?? ""
+        // URLComponents keeps the trailing slash, which URL.path drops
+        // ("/me/" would read as "/me" and not match the profile).
+        let path = webView?.url.flatMap { url in
+            NavigationPolicy.isInstagramHost(url.host)
+                ? URLComponents(url: url, resolvingAgainstBaseURL: false)?.path : nil
+        } ?? ""
         let active = WebTab.active(forPath: path, profilePath: profilePath)
         if active != activeTab { activeTab = active }
         let hides = path.isEmpty || pageHasLoginForm || pageHasOverlay ||

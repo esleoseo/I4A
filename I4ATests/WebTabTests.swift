@@ -10,6 +10,9 @@ final class WebTabTests: XCTestCase {
         XCTAssertEqual(WebTab.active(forPath: "/direct/inbox/", profilePath: nil), .direct)
         XCTAssertEqual(WebTab.active(forPath: "/me/", profilePath: "/me/"), .profile)
         XCTAssertEqual(WebTab.active(forPath: "/me/tagged/", profilePath: "/me/"), .profile)
+        // Without the trailing slash, as URL.path gives it.
+        XCTAssertEqual(WebTab.active(forPath: "/me", profilePath: "/me/"), .profile)
+        XCTAssertNil(WebTab.active(forPath: "/meow", profilePath: "/me/"))
         XCTAssertNil(WebTab.active(forPath: "/someone/", profilePath: "/me/"))
         XCTAssertNil(WebTab.active(forPath: "/p/abc/", profilePath: nil))
     }
@@ -19,6 +22,7 @@ final class WebTabTests: XCTestCase {
         XCTAssertTrue(WebTab.hidesBar(onPath: "/accounts/login/"))
         XCTAssertTrue(WebTab.hidesBar(onPath: "/stories/someone/1/"))
         XCTAssertTrue(WebTab.hidesBar(onPath: "/p/abc/comments/"))
+        XCTAssertTrue(WebTab.hidesBar(onPath: "/p/abc/comments"))
         XCTAssertFalse(WebTab.hidesBar(onPath: "/direct/inbox/"))
         XCTAssertFalse(WebTab.hidesBar(onPath: "/"))
     }
