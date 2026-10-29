@@ -27,9 +27,11 @@ struct ContentView: View {
         VStack(spacing: 0) {
             TopBar(showSettings: $showSettings)
             ZStack(alignment: .bottom) {
-                // Runs under the home indicator: no dead strip at the bottom.
+                // Kept above the home indicator: Instagram's web pins comment
+                // boxes and sheets to the bottom without allowing for it, so
+                // under it they'd be cut off. The strip below gets the page's
+                // background color instead (see below).
                 InstagramWebView(controller: web)
-                    .ignoresSafeArea(.container, edges: .bottom)
                 if showsTabBar {
                     FloatingTabBar(
                         tabs: web.tabs,
@@ -65,9 +67,17 @@ struct ContentView: View {
                         .transition(.opacity)
                 }
             }
+            // The strip under the home indicator takes the color at the bottom
+            // of the page (a sheet's gray, the feed's black), so it reads as
+            // part of the page rather than a dead zone.
+            .background(
+                Color(uiColor: web.bottomColor ?? .systemBackground)
+                    .ignoresSafeArea(.container, edges: .bottom)
+            )
         }
         // The keyboard covers the bar instead of pushing it up.
         .ignoresSafeArea(.keyboard, edges: .bottom)
+        .background(Color(.systemBackground).ignoresSafeArea())
         .animation(.easeInOut(duration: 0.25), value: isBlocked)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showsTabBar)
         .animation(.easeInOut(duration: 0.2), value: showReelNotice)

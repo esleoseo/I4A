@@ -402,7 +402,45 @@ enum ContentScripts {
               var rect = dialogs[i].getBoundingClientRect();
               if (rect.width > 0 && rect.height > 0 && getComputedStyle(dialogs[i]).visibility !== 'hidden') { return true; }
             }
+            return hasBottomSheet();
+          }
+
+          // Some of Instagram's sheets (e.g. "Switch accounts") aren't marked
+          // as dialogs. Look at what's actually where the native bar sits: if
+          // it belongs to something pinned to the screen that isn't
+          // Instagram's own bar or the page's whole frame (which holds the
+          // main content), a sheet or panel is there and the bar must step
+          // aside.
+          function hasBottomSheet() {
+            var y = window.innerHeight - 40;
+            var xs = [window.innerWidth * 0.25, window.innerWidth * 0.5, window.innerWidth * 0.75];
+            for (var i = 0; i < xs.length; i++) {
+              var el = document.elementFromPoint(xs[i], y);
+              for (var depth = 0; el && el !== document.body && el !== document.documentElement && depth < 25; depth++, el = el.parentElement) {
+                if (el.hasAttribute('data-i4a-nav')) { break; }
+                if (getComputedStyle(el).position !== 'fixed') { continue; }
+                if (el.querySelector('main, [role="main"]') || (nav && el.contains(nav))) { break; }
+                if (el.getBoundingClientRect().height >= 44) { return true; }
+                break;
+              }
+            }
             return false;
+          }
+
+          // The color showing at the very bottom of the page (a sheet's gray,
+          // the feed's black, ...), so the app can paint the strip under the
+          // home indicator to match, as Safari does.
+          function bottomColor() {
+            var el = document.elementFromPoint(window.innerWidth / 2, window.innerHeight - 2);
+            for (; el; el = el.parentElement) {
+              var color = getComputedStyle(el).backgroundColor;
+              var match = /rgba?\\(([^)]+)\\)/.exec(color || '');
+              if (!match) { continue; }
+              var parts = match[1].split(',');
+              if (parts.length > 3 && parseFloat(parts[3]) < 0.5) { continue; }
+              return color;
+            }
+            return null;
           }
 
           function post(message) {
@@ -416,6 +454,7 @@ enum ContentScripts {
             // Instagram's sheets and viewers sit where the native bar is.
             state.overlay = hasOverlay();
             state.navShown = document.documentElement.hasAttribute('data-i4a-show-nav');
+            state.bottomColor = bottomColor();
             var serialized = JSON.stringify(state);
             if (serialized !== lastReport) {
               lastReport = serialized;
